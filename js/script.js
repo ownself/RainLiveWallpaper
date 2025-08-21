@@ -5,6 +5,11 @@ let isPaused = false,
   elapsedResetTime = 21600,
   elapsedPreviousTime = 0;
 let devicePixelRatio = window.devicePixelRatio || 1;
+// --- 新增变量 ---
+let backgroundImages = []; // 存储从文件夹读取的图片文件对象
+let backgroundChangeIntervalId = null; // 存储定时器ID
+let isFolderMode = false; // 标记是否处于文件夹轮播模式
+// --- 新增结束 ---
 
 let scene, camera, renderer, material;
 let settings = { fps: 30, scale: 1.0, parallaxVal: 1 };
@@ -42,10 +47,10 @@ async function init() {
       u_tex0_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight), type: "v2" },
     },
     vertexShader: `
-          varying vec2 vUv;        
+          varying vec2 vUv;
           void main() {
               vUv = uv;
-              gl_Position = vec4( position, 1.0 );    
+              gl_Position = vec4( position, 1.0 );
           }
         `,
   });
@@ -64,6 +69,33 @@ async function init() {
 
   document.dispatchEvent(sceneLoadedEvent);
 }
+
+// --- 新增：处理文件夹选择 ---
+document.getElementById("folderPicker").addEventListener("change", function (event) {
+  if (event.target.files.length === 0) return;
+  // 清空之前的列表和定时器
+  backgroundImages = [];
+  if (backgroundChangeIntervalId) {
+    clearInterval(backgroundChangeIntervalId);
+    backgroundChangeIntervalId = null;
+  }
+  isFolderMode = true; // 进入文件夹模式
+  const files = Array.from(event.target.files);
+  // 筛选出图片文件
+  const imageFiles = files.filter(file => file.type.startsWith('image/'));
+
+  if (imageFiles.length === 0) {
+    console.warn("No image files found in the selected folder.");
+    return;
+  }
+  backgroundImages = imageFiles;
+  console.log(`Loaded ${backgroundImages.length} images from folder.`);
+  // 立即加载第一张图片
+  changeBackgroundToRandomImage();
+
+  // 设置定时器，每60秒更换一次
+  backgroundChangeIntervalId = setInterval(changeBackgroundToRandomImage, 60000); //60000 毫秒 = 1 分钟
+});
 
 function setScale(userScale) {
   settings.scale = userScale;
@@ -192,7 +224,7 @@ function livelyPropertyListener(name, val) {
       break;
     case "displayScaling":
       setScale(val);
-      break;  
+      break;
     case "debug":
       if (val) gui.show();
       else gui.hide();
@@ -224,6 +256,17 @@ function datUI() {
     },
     "picker"
   ).name("Change Background");
+
+  // --- 新增：添加“Change Background Folder”按钮 ---
+  bg.add(
+    {
+      folderPicker: function () {
+        document.getElementById("folderPicker").click();
+      },
+    },
+    "folderPicker"
+  ).name("Change Background Folder");
+  // --- 新增结束 ---
   bg.add(material.uniforms.u_blur_iterations, "value", 1, 64, 1).name("Blur Quality");
   bg.add(material.uniforms.u_blur_intensity, "value", 0, 10, 0.01).name("Blur");
   bg.add(settings, "parallaxVal", 0, 5, 1).name("Parallax");
@@ -315,6 +358,32 @@ function createVideoElement(src) {
   htmlVideo.play();
   return htmlVideo;
 }
+
+// --- 新增：随机更换背景图片的函数 ---
+function changeBackgroundToRandomImage() {
+  if (!isFolderMode || backgroundImages.length === 0) { // 如果不是文件夹模式或者没有图片，则不执行
+    return;
+  }
+  const randomIndex = Math.floor(Math.random() * backgroundImages.length);
+  const randomImageFile = backgroundImages[randomIndex];
+  console.log(`Changing background to: ${randomImageFile.name}`);
+  // 重用现有的单张图片加载逻辑，但使用 File 对象
+  disposeVideoElement(videoElement); // 如果之前有视频，先清理
+  material.uniforms.u_tex0.value?.dispose(); // 清理旧纹理
+
+  // 使用 File 对象创建对象 URL 并加载
+  new THREE.TextureLoader().load(URL.createObjectURL(randomImageFile), function (tex) {
+    material.uniforms.u_tex0.value = tex;
+    // 注意：File 对象没有直接的 width/height 属性，需要通过 Image 对象获取
+    // 或者使用 tex.image.naturalWidth/Height (在纹理加载完成后)
+    // 这里简单处理，可能需要更精确的尺寸同步（对于 u_tex0_resolution）
+    // 一个更稳健的方法是在纹理加载的 onLoad 回调中设置尺寸
+    //但通常 texture.image 会包含加载后的 HTMLImageElement，其 width/height 可用
+    // 为简化，我们假设它有效（在大多数浏览器中是这样）
+    material.uniforms.u_tex0_resolution.value = new THREE.Vector2(tex.image.width, tex.image.height);
+  });
+}
+// --- 新增结束 ---
 
 //ref: https://stackoverflow.com/questions/3258587/how-to-properly-unload-destroy-a-video-element
 function disposeVideoElement(video) {
