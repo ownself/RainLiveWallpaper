@@ -202,7 +202,7 @@ void main() {
             }
             a++;
         }
-        col /= float(u_blur_iterations);
+        col /= float(u_blur_iterations + 2);
     }
 
     t = (T + 3.) * .5;			// make time sync with first lightnoing
