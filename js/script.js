@@ -12,7 +12,7 @@ let isFolderMode = false; // 标记是否处于文件夹轮播模式
 // --- 新增结束 ---
 
 let scene, camera, renderer, material;
-let settings = { fps: 30, scale: 1.0, parallaxVal: 1 };
+let settings = { fps: 30, scale: 1.0, parallaxVal: 0 };
 let videoElement;
 
 //custom events
@@ -42,7 +42,7 @@ async function init() {
       u_panning: { value: false, type: "b" },
       u_post_processing: { value: true, type: "b" },
       u_lightning: { value: false, type: "b" },
-      u_texture_fill: { value: true, type: "b" },
+      u_texture_fill: { value: false, type: "b" },
       u_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight), type: "v2" },
       u_tex0_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight), type: "v2" },
     },
@@ -269,7 +269,7 @@ function datUI() {
   // --- 新增结束 ---
   bg.add(material.uniforms.u_blur_iterations, "value", 1, 64, 1).name("Blur Quality");
   bg.add(material.uniforms.u_blur_intensity, "value", 0, 10, 0.01).name("Blur");
-  bg.add(settings, "parallaxVal", 0, 5, 1).name("Parallax");
+  bg.add(settings, "parallaxVal", 0, 5, 0).name("Parallax");
   bg.add(material.uniforms.u_texture_fill, "value").name("Scale to Fill");
   bg.add(material.uniforms.u_panning, "value").name("Panning");
   bg.add(material.uniforms.u_post_processing, "value").name("Post Processing");
