@@ -44,11 +44,11 @@ async function init() {
       u_time: { value: 0, type: "f" },
       u_intensity: { value: 0.4, type: "f" },
       u_speed: { value: 0.25, type: "f" },
-      u_brightness: { value: 0.8, type: "f" },
+      u_brightness: { value: 1.0, type: "f" },
       u_normal: { value: 0.5, type: "f" },
       u_zoom: { value: 2.61, type: "f" },
       u_blur_intensity: { value: 0.0, type: "f" },
-      u_blur_iterations: { value: 16, type: "i" },
+      u_blur_iterations: { value: 1, type: "i" },
       u_panning: { value: false, type: "b" },
       u_post_processing: { value: false, type: "b" },
       u_lightning: { value: false, type: "b" },
@@ -121,11 +121,11 @@ document.getElementById("folderPicker").addEventListener("change", function (eve
       return;
     }
     console.log(`Loaded ${backgroundVideos.length} videos from folder.`);
-    
+
     // 初始化视频索引数组并打乱
     initializeAndShuffleIndices(videoIndices, backgroundVideos.length);
     currentVideoIndex = 0;
-    
+
     // 立即加载第一个视频
     changeBackgroundToNextVideo();
   } else if (imageFiles.length > 0) {
@@ -137,11 +137,11 @@ document.getElementById("folderPicker").addEventListener("change", function (eve
       return;
     }
     console.log(`Loaded ${backgroundImages.length} images from folder.`);
-    
+
     // 初始化图片索引数组并打乱
     initializeAndShuffleIndices(imageIndices, backgroundImages.length);
     currentImageIndex = 0;
-    
+
     // 立即加载第一张图片
     changeBackgroundToNextImage();
 
@@ -450,7 +450,7 @@ function initializeAndShuffleIndices(indicesArray, length) {
   for (let i = 0; i < length; i++) {
     indicesArray.push(i);
   }
-  
+
   // Fisher-Yates 洗牌算法打乱数组
   for (let i = length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -464,12 +464,12 @@ function changeBackgroundToNextImage() {
   if (!isFolderMode || isVideoFolderMode || backgroundImages.length === 0) { // 如果不是文件夹模式、是视频模式或者没有图片，则不执行
     return;
   }
-  
+
   // 获取下一个图片索引
   const imageIndex = imageIndices[currentImageIndex];
   const imageFile = backgroundImages[imageIndex];
   console.log(`Changing background to: ${imageFile.name} (index: ${imageIndex}, position: ${currentImageIndex + 1}/${backgroundImages.length})`);
-  
+
   // 重用现有的单张图片加载逻辑，但使用 File 对象
   disposeVideoElement(videoElement); // 如果之前有视频，先清理
   material.uniforms.u_tex0.value?.dispose(); // 清理旧纹理
@@ -479,7 +479,7 @@ function changeBackgroundToNextImage() {
     material.uniforms.u_tex0.value = tex;
     material.uniforms.u_tex0_resolution.value = new THREE.Vector2(tex.image.width, tex.image.height);
   });
-  
+
   // 更新索引，如果已遍历完所有图片，则重新打乱索引数组
   currentImageIndex++;
   if (currentImageIndex >= backgroundImages.length) {
@@ -515,7 +515,7 @@ function changeBackgroundToNextVideo() {
   // 添加播放结束事件监听器
   currentVideoElement.addEventListener('ended', function() {
     console.log('Video ended, switching to next video');
-    
+
     // 更新索引，如果已遍历完所有视频，则重新打乱索引数组
     currentVideoIndex++;
     if (currentVideoIndex >= backgroundVideos.length) {
@@ -523,7 +523,7 @@ function changeBackgroundToNextVideo() {
       initializeAndShuffleIndices(videoIndices, backgroundVideos.length);
       currentVideoIndex = 0;
     }
-    
+
     changeBackgroundToNextVideo(); // 播放下一个视频
   });
 
