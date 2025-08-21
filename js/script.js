@@ -13,6 +13,11 @@ let isFolderMode = false; // 标记是否处于文件夹轮播模式
 let isVideoFolderMode = false; // 标记是否处于视频文件夹模式
 let isVideoLoop = true;
 let currentVideoElement = null; // 当前播放的视频元素
+// 用于不重复随机遍历的索引数组
+let imageIndices = []; // 图片文件的索引数组
+let videoIndices = []; // 视频文件的索引数组
+let currentImageIndex = 0; // 当前图片索引位置
+let currentVideoIndex = 0; // 当前视频索引位置
 // --- 新增结束 ---
 
 let scene, camera, renderer, material;
@@ -116,8 +121,13 @@ document.getElementById("folderPicker").addEventListener("change", function (eve
       return;
     }
     console.log(`Loaded ${backgroundVideos.length} videos from folder.`);
+    
+    // 初始化视频索引数组并打乱
+    initializeAndShuffleIndices(videoIndices, backgroundVideos.length);
+    currentVideoIndex = 0;
+    
     // 立即加载第一个视频
-    changeBackgroundToRandomVideo();
+    changeBackgroundToNextVideo();
   } else if (imageFiles.length > 0) {
     // 如果只有图片文件，进入图片文件夹模式
     backgroundImages = imageFiles;
@@ -127,11 +137,16 @@ document.getElementById("folderPicker").addEventListener("change", function (eve
       return;
     }
     console.log(`Loaded ${backgroundImages.length} images from folder.`);
+    
+    // 初始化图片索引数组并打乱
+    initializeAndShuffleIndices(imageIndices, backgroundImages.length);
+    currentImageIndex = 0;
+    
     // 立即加载第一张图片
-    changeBackgroundToRandomImage();
+    changeBackgroundToNextImage();
 
     // 设置定时器，根据配置的时间间隔更换图片
-    backgroundChangeIntervalId = setInterval(changeBackgroundToRandomImage, slideShowInterval * 1000);
+    backgroundChangeIntervalId = setInterval(changeBackgroundToNextImage, slideShowInterval * 1000);
   } else {
     console.warn("No image or video files found in the selected folder.");
     return;
@@ -428,41 +443,63 @@ function createVideoElement(src, looping = true) {
   return htmlVideo;
 }
 
-// --- 新增：随机更换背景图片的函数 ---
-function changeBackgroundToRandomImage() {
+// --- 新增：初始化并打乱索引数组 ---
+function initializeAndShuffleIndices(indicesArray, length) {
+  // 初始化索引数组
+  indicesArray.length = 0;
+  for (let i = 0; i < length; i++) {
+    indicesArray.push(i);
+  }
+  
+  // Fisher-Yates 洗牌算法打乱数组
+  for (let i = length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indicesArray[i], indicesArray[j]] = [indicesArray[j], indicesArray[i]];
+  }
+}
+// --- 新增结束 ---
+
+// --- 新增：更换到下一个背景图片的函数 ---
+function changeBackgroundToNextImage() {
   if (!isFolderMode || isVideoFolderMode || backgroundImages.length === 0) { // 如果不是文件夹模式、是视频模式或者没有图片，则不执行
     return;
   }
-  const randomIndex = Math.floor(Math.random() * backgroundImages.length);
-  const randomImageFile = backgroundImages[randomIndex];
-  console.log(`Changing background to: ${randomImageFile.name}`);
+  
+  // 获取下一个图片索引
+  const imageIndex = imageIndices[currentImageIndex];
+  const imageFile = backgroundImages[imageIndex];
+  console.log(`Changing background to: ${imageFile.name} (index: ${imageIndex}, position: ${currentImageIndex + 1}/${backgroundImages.length})`);
+  
   // 重用现有的单张图片加载逻辑，但使用 File 对象
   disposeVideoElement(videoElement); // 如果之前有视频，先清理
   material.uniforms.u_tex0.value?.dispose(); // 清理旧纹理
 
   // 使用 File 对象创建对象 URL 并加载
-  new THREE.TextureLoader().load(URL.createObjectURL(randomImageFile), function (tex) {
+  new THREE.TextureLoader().load(URL.createObjectURL(imageFile), function (tex) {
     material.uniforms.u_tex0.value = tex;
-    // 注意：File 对象没有直接的 width/height 属性，需要通过 Image 对象获取
-    // 或者使用 tex.image.naturalWidth/Height (在纹理加载完成后)
-    // 这里简单处理，可能需要更精确的尺寸同步（对于 u_tex0_resolution）
-    // 一个更稳健的方法是在纹理加载的 onLoad 回调中设置尺寸
-    //但通常 texture.image 会包含加载后的 HTMLImageElement，其 width/height 可用
-    // 为简化，我们假设它有效（在大多数浏览器中是这样）
     material.uniforms.u_tex0_resolution.value = new THREE.Vector2(tex.image.width, tex.image.height);
   });
+  
+  // 更新索引，如果已遍历完所有图片，则重新打乱索引数组
+  currentImageIndex++;
+  if (currentImageIndex >= backgroundImages.length) {
+    console.log("All images have been shown, reshuffling indices for next round");
+    initializeAndShuffleIndices(imageIndices, backgroundImages.length);
+    currentImageIndex = 0;
+  }
 }
 // --- 新增结束 ---
 
-// --- 新增：随机播放背景视频的函数 ---
-function changeBackgroundToRandomVideo() {
+// --- 新增：播放下一个背景视频的函数 ---
+function changeBackgroundToNextVideo() {
   if (!isFolderMode || !isVideoFolderMode || backgroundVideos.length === 0) { // 如果不是文件夹模式、不是视频模式或者没有视频，则不执行
     return;
   }
 
-  const randomIndex = Math.floor(Math.random() * backgroundVideos.length);
-  const randomVideoFile = backgroundVideos[randomIndex];
-  console.log(`Changing background to video: ${randomVideoFile.name}`);
+  // 获取下一个视频索引
+  const videoIndex = videoIndices[currentVideoIndex];
+  const videoFile = backgroundVideos[videoIndex];
+  console.log(`Changing background to video: ${videoFile.name} (index: ${videoIndex}, position: ${currentVideoIndex + 1}/${backgroundVideos.length})`);
 
   // 清理之前的视频元素
   if (currentVideoElement) {
@@ -473,12 +510,21 @@ function changeBackgroundToRandomVideo() {
   material.uniforms.u_tex0.value?.dispose();
 
   // 创建新的视频元素
-  currentVideoElement = createVideoElement(URL.createObjectURL(randomVideoFile), isVideoLoop);
+  currentVideoElement = createVideoElement(URL.createObjectURL(videoFile), isVideoLoop);
 
   // 添加播放结束事件监听器
   currentVideoElement.addEventListener('ended', function() {
     console.log('Video ended, switching to next video');
-    changeBackgroundToRandomVideo(); // 播放下一个随机视频
+    
+    // 更新索引，如果已遍历完所有视频，则重新打乱索引数组
+    currentVideoIndex++;
+    if (currentVideoIndex >= backgroundVideos.length) {
+      console.log("All videos have been shown, reshuffling indices for next round");
+      initializeAndShuffleIndices(videoIndices, backgroundVideos.length);
+      currentVideoIndex = 0;
+    }
+    
+    changeBackgroundToNextVideo(); // 播放下一个视频
   });
 
   // 创建视频纹理
