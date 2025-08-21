@@ -7,8 +7,12 @@ let isPaused = false,
 let devicePixelRatio = window.devicePixelRatio || 1;
 // --- 新增变量 ---
 let backgroundImages = []; // 存储从文件夹读取的图片文件对象
+let backgroundVideos = []; // 存储从文件夹读取的视频文件对象
 let backgroundChangeIntervalId = null; // 存储定时器ID
 let isFolderMode = false; // 标记是否处于文件夹轮播模式
+let isVideoFolderMode = false; // 标记是否处于视频文件夹模式
+let isVideoLoop = true;
+let currentVideoElement = null; // 当前播放的视频元素
 // --- 新增结束 ---
 
 let scene, camera, renderer, material;
@@ -77,26 +81,61 @@ document.getElementById("folderPicker").addEventListener("change", function (eve
   if (event.target.files.length === 0) return;
   // 清空之前的列表和定时器
   backgroundImages = [];
+  backgroundVideos = [];
   if (backgroundChangeIntervalId) {
     clearInterval(backgroundChangeIntervalId);
     backgroundChangeIntervalId = null;
   }
-  isFolderMode = true; // 进入文件夹模式
-  const files = Array.from(event.target.files);
-  // 筛选出图片文件
-  const imageFiles = files.filter(file => file.type.startsWith('image/'));
+  // 清理当前视频元素
+  if (currentVideoElement) {
+    disposeVideoElement(currentVideoElement);
+    currentVideoElement = null;
+  }
 
-  if (imageFiles.length === 0) {
-    console.warn("No image files found in the selected folder.");
+  isFolderMode = true; // 进入文件夹模式
+  isVideoFolderMode = false; // 默认不是视频文件夹模式
+
+  const files = Array.from(event.target.files);
+  // 筛选出图片文件和视频文件
+  const imageFiles = files.filter(file => file.type.startsWith('image/'));
+  const videoFiles = files.filter(file => file.type.startsWith('video/'));
+
+  // 判断文件夹模式
+  if (videoFiles.length > 0) {
+    // 如果存在视频文件，进入视频文件夹模式
+    isVideoFolderMode = true;
+    backgroundVideos = videoFiles;
+    if (videoFiles.length > 1) {
+        isVideoLoop = false; // disable looping if multiple videos are present
+    } else {
+        isVideoLoop = true; // enable looping if only one video is present
+    }
+
+    if (backgroundVideos.length === 0) {
+      console.warn("No video files found in the selected folder.");
+      return;
+    }
+    console.log(`Loaded ${backgroundVideos.length} videos from folder.`);
+    // 立即加载第一个视频
+    changeBackgroundToRandomVideo();
+  } else if (imageFiles.length > 0) {
+    // 如果只有图片文件，进入图片文件夹模式
+    backgroundImages = imageFiles;
+
+    if (backgroundImages.length === 0) {
+      console.warn("No image files found in the selected folder.");
+      return;
+    }
+    console.log(`Loaded ${backgroundImages.length} images from folder.`);
+    // 立即加载第一张图片
+    changeBackgroundToRandomImage();
+
+    // 设置定时器，根据配置的时间间隔更换图片
+    backgroundChangeIntervalId = setInterval(changeBackgroundToRandomImage, slideShowInterval * 1000);
+  } else {
+    console.warn("No image or video files found in the selected folder.");
     return;
   }
-  backgroundImages = imageFiles;
-  console.log(`Loaded ${backgroundImages.length} images from folder.`);
-  // 立即加载第一张图片
-  changeBackgroundToRandomImage();
-
-  // 设置定时器，根据配置的时间间隔更换图片
-  backgroundChangeIntervalId = setInterval(changeBackgroundToRandomImage, slideShowInterval * 1000);
 });
 
 function setScale(userScale) {
@@ -380,18 +419,18 @@ function getExtension(filePath) {
   return filePath.substring(filePath.lastIndexOf(".") + 1, filePath.length).toLowerCase() || filePath;
 }
 
-function createVideoElement(src) {
+function createVideoElement(src, looping = true) {
   let htmlVideo = document.createElement("video");
   htmlVideo.src = src;
   htmlVideo.muted = true;
-  htmlVideo.loop = true;
+  htmlVideo.loop = looping; // 默认循环播放
   htmlVideo.play();
   return htmlVideo;
 }
 
 // --- 新增：随机更换背景图片的函数 ---
 function changeBackgroundToRandomImage() {
-  if (!isFolderMode || backgroundImages.length === 0) { // 如果不是文件夹模式或者没有图片，则不执行
+  if (!isFolderMode || isVideoFolderMode || backgroundImages.length === 0) { // 如果不是文件夹模式、是视频模式或者没有图片，则不执行
     return;
   }
   const randomIndex = Math.floor(Math.random() * backgroundImages.length);
@@ -412,6 +451,49 @@ function changeBackgroundToRandomImage() {
     // 为简化，我们假设它有效（在大多数浏览器中是这样）
     material.uniforms.u_tex0_resolution.value = new THREE.Vector2(tex.image.width, tex.image.height);
   });
+}
+// --- 新增结束 ---
+
+// --- 新增：随机播放背景视频的函数 ---
+function changeBackgroundToRandomVideo() {
+  if (!isFolderMode || !isVideoFolderMode || backgroundVideos.length === 0) { // 如果不是文件夹模式、不是视频模式或者没有视频，则不执行
+    return;
+  }
+
+  const randomIndex = Math.floor(Math.random() * backgroundVideos.length);
+  const randomVideoFile = backgroundVideos[randomIndex];
+  console.log(`Changing background to video: ${randomVideoFile.name}`);
+
+  // 清理之前的视频元素
+  if (currentVideoElement) {
+    disposeVideoElement(currentVideoElement);
+  }
+
+  // 清理旧纹理
+  material.uniforms.u_tex0.value?.dispose();
+
+  // 创建新的视频元素
+  currentVideoElement = createVideoElement(URL.createObjectURL(randomVideoFile), isVideoLoop);
+
+  // 添加播放结束事件监听器
+  currentVideoElement.addEventListener('ended', function() {
+    console.log('Video ended, switching to next video');
+    changeBackgroundToRandomVideo(); // 播放下一个随机视频
+  });
+
+  // 创建视频纹理
+  let videoTexture = new THREE.VideoTexture(currentVideoElement);
+  currentVideoElement.addEventListener(
+    "loadedmetadata",
+    function (e) {
+      material.uniforms.u_tex0_resolution.value = new THREE.Vector2(
+        videoTexture.image.videoWidth,
+        videoTexture.image.videoHeight
+      );
+    },
+    false
+  );
+  material.uniforms.u_tex0.value = videoTexture;
 }
 // --- 新增结束 ---
 
