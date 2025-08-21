@@ -45,7 +45,7 @@ async function init() {
       u_blur_intensity: { value: 0.0, type: "f" },
       u_blur_iterations: { value: 16, type: "i" },
       u_panning: { value: false, type: "b" },
-      u_post_processing: { value: true, type: "b" },
+      u_post_processing: { value: false, type: "b" },
       u_lightning: { value: false, type: "b" },
       u_texture_fill: { value: false, type: "b" },
       u_rain_enabled: { value: false, type: "b" },
