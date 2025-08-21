@@ -34,6 +34,11 @@
     "type": "slider",
     "value": 261
   },
+  "rainEnabled": {
+    "type": "checkbox",
+    "value": true,
+    "text": "Enable Rain"
+  },
   "mediaSelect": {
     "type": "folderDropdown",
     "value": "image.jpg",

@@ -38,12 +38,13 @@ async function init() {
       u_brightness: { value: 0.8, type: "f" },
       u_normal: { value: 0.5, type: "f" },
       u_zoom: { value: 2.61, type: "f" },
-      u_blur_intensity: { value: 0.5, type: "f" },
+      u_blur_intensity: { value: 0.0, type: "f" },
       u_blur_iterations: { value: 16, type: "i" },
       u_panning: { value: false, type: "b" },
       u_post_processing: { value: true, type: "b" },
       u_lightning: { value: false, type: "b" },
       u_texture_fill: { value: false, type: "b" },
+      u_rain_enabled: { value: false, type: "b" },
       u_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight), type: "v2" },
       u_tex0_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight), type: "v2" },
     },
@@ -216,6 +217,9 @@ function livelyPropertyListener(name, val) {
         backgroundChangeIntervalId = setInterval(changeBackgroundToRandomImage, slideShowInterval * 1000);
       }
       break;
+    case "rainEnabled":
+      material.uniforms.u_rain_enabled.value = val;
+      break;
     case "animateChk":
       material.uniforms.u_panning.value = val;
       break;
@@ -257,6 +261,7 @@ function datUI() {
   rain.add(material.uniforms.u_normal, "value", 0, 3, 0.01).name("Normal");
   rain.add(material.uniforms.u_zoom, "value", 0.1, 3.0, 0.01).name("Zoom");
   rain.add(material.uniforms.u_lightning, "value").name("Lightning");
+  rain.add(material.uniforms.u_rain_enabled, "value").name("Enable Rain");
   bg.add(
     {
       picker: function () {

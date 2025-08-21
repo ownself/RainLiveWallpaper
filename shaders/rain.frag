@@ -18,6 +18,7 @@ uniform bool u_panning;
 uniform bool u_post_processing;
 uniform bool u_lightning;
 uniform bool u_texture_fill;
+uniform bool u_rain_enabled;
 
 #define S(a, b, t) smoothstep(a, b, t)
 //#define USE_POST_PROCESSING
@@ -151,24 +152,28 @@ void main() {
 
     float t = T * .2 * u_speed;
 
+    vec2 n = vec2(0.0, 0.0); // default to no distortion
     float rainAmount = u_intensity;
 
-    float zoom = u_panning ? -cos(T * .2) : 0.;
-    uv *= (.7 + zoom * .3) * u_zoom;
+    // Only calculate rain effects if enabled
+    if(u_rain_enabled) {
+        float zoom = u_panning ? -cos(T * .2) : 0.;
+        uv *= (.7 + zoom * .3) * u_zoom;
 
-    float staticDrops = S(-.5, 1., rainAmount) * 2.;
-    float layer1 = S(.25, .75, rainAmount);
-    float layer2 = S(.0, .5, rainAmount);
+        float staticDrops = S(-.5, 1., rainAmount) * 2.;
+        float layer1 = S(.25, .75, rainAmount);
+        float layer2 = S(.0, .5, rainAmount);
 
-    vec2 c = Drops(uv, t, staticDrops, layer1, layer2);
-    #ifdef CHEAP_NORMALS
-    vec2 n = vec2(dFdx(c.x), dFdy(c.x));// cheap normals (3x cheaper, but 2 times shittier ;))
-    #else
-    vec2 e = vec2(.001, 0.) * u_normal;
-    float cx = Drops(uv + e, t, staticDrops, layer1, layer2).x;
-    float cy = Drops(uv + e.yx, t, staticDrops, layer1, layer2).x;
-    vec2 n = vec2(cx - c.x, cy - c.x);		// expensive normals
-    #endif
+        vec2 c = Drops(uv, t, staticDrops, layer1, layer2);
+        #ifdef CHEAP_NORMALS
+        n = vec2(dFdx(c.x), dFdy(c.x));// cheap normals (3x cheaper, but 2 times shittier ;))
+        #else
+        vec2 e = vec2(.001, 0.) * u_normal;
+        float cx = Drops(uv + e, t, staticDrops, layer1, layer2).x;
+        float cy = Drops(uv + e.yx, t, staticDrops, layer1, layer2).x;
+        n = vec2(cx - c.x, cy - c.x);  // expensive normals
+        #endif
+    }
 
     vec2 texUV = UV + n;
     vec3 col;
