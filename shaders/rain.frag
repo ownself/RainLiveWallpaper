@@ -125,7 +125,10 @@ void main() {
     vec2 UV = gl_FragCoord.xy / u_resolution.xy;//-.5;
     float T = u_time;
 
+    // When u_texture_fill is true, scale to fill (current behavior)
+    // When u_texture_fill is false, maintain aspect ratio with letterbox/pillarbox
     if(u_texture_fill) {
+        // Scale to fill - image covers entire screen, may crop edges
         float screenAspect = u_resolution.x / u_resolution.y;
         float textureAspect = u_tex0_resolution.x / u_tex0_resolution.y;
         float scaleX = 1., scaleY = 1.;
@@ -133,6 +136,16 @@ void main() {
             scaleX = screenAspect / textureAspect;
         else
             scaleY = textureAspect / screenAspect;
+        UV = vec2(scaleX, scaleY) * (UV - 0.5) + 0.5;
+    } else {
+        // Letterbox/pillarbox - show entire image with black bars
+        float screenAspect = u_resolution.x / u_resolution.y;
+        float textureAspect = u_tex0_resolution.x / u_tex0_resolution.y;
+        float scaleX = 1., scaleY = 1.;
+        if(textureAspect > screenAspect)
+            scaleY = textureAspect / screenAspect; // Add bars at top and bottom
+        else
+            scaleX = screenAspect / textureAspect;  // Add bars at sides
         UV = vec2(scaleX, scaleY) * (UV - 0.5) + 0.5;
     }
 
@@ -157,8 +170,14 @@ void main() {
     vec2 n = vec2(cx - c.x, cy - c.x);		// expensive normals
     #endif
 
-    vec3 col = texture2D(u_tex0, UV + n).rgb;
-    vec4 texCoord = vec4(UV.x + n.x, UV.y + n.y, 0, 1.0 * 25. * 0.01 / 7.);
+    vec2 texUV = UV + n;
+    vec3 col;
+    if(texUV.x < 0.0 || texUV.x > 1.0 || texUV.y < 0.0 || texUV.y > 1.0) {
+        col = vec3(0.0); // black outside the UV range
+    } else {
+        col = texture2D(u_tex0, texUV).rgb;
+    }
+    vec4 texCoord = vec4(texUV.x, texUV.y, 0, 1.0 * 25. * 0.01 / 7.);
 
     if(u_blur_iterations != 1) {
         float blur = u_blur_intensity;
@@ -171,7 +190,11 @@ void main() {
             float d = fract(sin((float(m) + 1.) * 546.) * 5424.);
             d = sqrt(d);
             offs *= d;
-            col += texture2D(u_tex0, texCoord.xy + vec2(offs.x, offs.y)).xyz;
+            vec2 blurUV = texCoord.xy + vec2(offs.x, offs.y);
+            // no blurring outside the UV range
+            if(blurUV.x >= 0.0 && blurUV.x <= 1.0 && blurUV.y >= 0.0 && blurUV.y <= 1.0) {
+                col += texture2D(u_tex0, texCoord.xy + vec2(offs.x, offs.y)).xyz;
+            }
             a++;
         }
         col /= float(u_blur_iterations);
