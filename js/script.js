@@ -13,6 +13,7 @@ let isFolderMode = false; // 标记是否处于文件夹轮播模式
 
 let scene, camera, renderer, material;
 let settings = { fps: 30, scale: 1.0, parallaxVal: 0 };
+let slideShowInterval = 10; // 幻灯片间隔时间（秒）
 let videoElement;
 
 //custom events
@@ -93,8 +94,8 @@ document.getElementById("folderPicker").addEventListener("change", function (eve
   // 立即加载第一张图片
   changeBackgroundToRandomImage();
 
-  // 设置定时器，每60秒更换一次
-  backgroundChangeIntervalId = setInterval(changeBackgroundToRandomImage, 60000); //60000 毫秒 = 1 分钟
+  // 设置定时器，根据配置的时间间隔更换图片
+  backgroundChangeIntervalId = setInterval(changeBackgroundToRandomImage, slideShowInterval * 1000);
 });
 
 function setScale(userScale) {
@@ -207,6 +208,14 @@ function livelyPropertyListener(name, val) {
     case "mediaScaling":
       material.uniforms.u_texture_fill.value = [false, true][val];
       break;
+    case "slideShowInterval":
+      slideShowInterval = val;
+      // 如果当前正在运行幻灯片，重新设置定时器
+      if (isFolderMode && backgroundChangeIntervalId) {
+        clearInterval(backgroundChangeIntervalId);
+        backgroundChangeIntervalId = setInterval(changeBackgroundToRandomImage, slideShowInterval * 1000);
+      }
+      break;
     case "animateChk":
       material.uniforms.u_panning.value = val;
       break;
@@ -269,8 +278,24 @@ function datUI() {
   // --- 新增结束 ---
   bg.add(material.uniforms.u_blur_iterations, "value", 1, 64, 1).name("Blur Quality");
   bg.add(material.uniforms.u_blur_intensity, "value", 0, 10, 0.01).name("Blur");
-  bg.add(settings, "parallaxVal", 0, 5, 0).name("Parallax");
+  bg.add(settings, "parallaxVal", 0, 5, 1).name("Parallax");
   bg.add(material.uniforms.u_texture_fill, "value").name("Scale to Fill");
+  // 添加幻灯片间隔滑块
+  let slideShowIntervalSetting = { value: slideShowInterval };
+  bg.add(slideShowIntervalSetting, "value", 5, 1200, 1)
+    .name("Slide Show Interval (seconds)")
+    .onChange(function (val) {
+      slideShowInterval = val;
+      // 如果当前正在运行幻灯片，重新设置定时器
+      if (isFolderMode && backgroundChangeIntervalId) {
+        clearInterval(backgroundChangeIntervalId);
+        backgroundChangeIntervalId = setInterval(changeBackgroundToRandomImage, slideShowInterval * 1000);
+      }
+      // 通知Lively属性变更
+      if (typeof livelyPropertyListener === 'function') {
+        // 这里我们不直接调用livelyPropertyListener，因为这是UI变化，不是来自Lively的属性变更
+      }
+    });
   bg.add(material.uniforms.u_panning, "value").name("Panning");
   bg.add(material.uniforms.u_post_processing, "value").name("Post Processing");
   perf.add(settings, "fps", 15, 120, 15).name("FPS");

@@ -41,6 +41,13 @@
     "filter": "*.jpg|*.jpeg|*.png|*.webm",
     "folder": "media"
   },
+  "slideShowInterval": {
+    "max": 1200,
+    "min": 5,
+    "text": "Slide Show Interval (seconds)",
+    "type": "slider",
+    "value": 60
+  },
   "mediaScaling": {
     "type": "dropdown",
     "value": 0,
