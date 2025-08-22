@@ -5,6 +5,10 @@ precision highp float;
 varying vec2 vUv;
 uniform sampler2D u_tex0;
 uniform vec2 u_tex0_resolution;
+uniform sampler2D u_tex1;
+uniform vec2 u_tex1_resolution;
+uniform sampler2D u_tex2;
+uniform vec2 u_tex2_resolution;
 uniform float u_time;
 uniform vec2 u_resolution;
 uniform float u_speed;
@@ -19,6 +23,7 @@ uniform bool u_post_processing;
 uniform bool u_lightning;
 uniform bool u_texture_fill;
 uniform bool u_rain_enabled;
+uniform bool u_triple_image_mode; // New uniform for triple image mode
 
 #define S(a, b, t) smoothstep(a, b, t)
 //#define USE_POST_PROCESSING
@@ -121,103 +126,261 @@ float N21(vec2 p) {
     return fract(p.x * p.y);
 }
 
+// Function to calculate UV coordinates for a single image with scaling
+vec2 calculateScaledUV(vec2 screenUV, vec2 textureResolution, vec2 segmentOffset, vec2 segmentSize) {
+    // Adjust screen UV to be within the segment
+    vec2 segmentUV = (screenUV - segmentOffset) / segmentSize;
+
+    // If the UV is outside the segment, return a value that will result in black
+    if (segmentUV.x < 0.0 || segmentUV.x > 1.0 || segmentUV.y < 0.0 || segmentUV.y > 1.0) {
+        return vec2(-1.0, -1.0); // Invalid UV to indicate outside
+    }
+
+    // Apply scaling logic (u_texture_fill behavior) within the segment
+    // Calculate the aspect ratio of the segment (width: u_resolution.x/3, height: u_resolution.y)
+    float segmentWidth = u_resolution.x / 3.0;
+    float segmentAspect = segmentWidth / u_resolution.y;
+    float textureAspect = textureResolution.x / textureResolution.y;
+    vec2 scaledUV = segmentUV;
+
+    // if(u_texture_fill) {
+        // Scale to fill within the segment
+        float scaleX = 1., scaleY = 1.;
+        if(textureAspect > segmentAspect)
+            scaleX = segmentAspect / textureAspect;
+        else
+            scaleY = textureAspect / segmentAspect;
+        scaledUV = vec2(scaleX, scaleY) * (segmentUV - 0.5) + 0.5;
+    // } else {
+    //     // Letterbox/pillarbox within the segment
+    //     float scaleX = 1., scaleY = 1.;
+    //     if(textureAspect > segmentAspect)
+    //         scaleY = textureAspect / segmentAspect; // Add bars at top and bottom
+    //     else
+    //         scaleX = segmentAspect / textureAspect;  // Add bars at sides
+    //     scaledUV = vec2(scaleX, scaleY) * (segmentUV - 0.5) + 0.5;
+    // }
+
+    return scaledUV;
+}
+
 void main() {
     vec2 uv = (gl_FragCoord.xy - .5 * u_resolution.xy) / u_resolution.y;
-    vec2 UV = gl_FragCoord.xy / u_resolution.xy;//-.5;
+    vec2 screenUV = gl_FragCoord.xy / u_resolution.xy; // Screen UV (0-1)
     float T = u_time;
 
-    // When u_texture_fill is true, scale to fill (current behavior)
-    // When u_texture_fill is false, maintain aspect ratio with letterbox/pillarbox
-    if(u_texture_fill) {
-        // Scale to fill - image covers entire screen, may crop edges
-        float screenAspect = u_resolution.x / u_resolution.y;
-        float textureAspect = u_tex0_resolution.x / u_tex0_resolution.y;
-        float scaleX = 1., scaleY = 1.;
-        if(textureAspect > screenAspect )
-            scaleX = screenAspect / textureAspect;
-        else
-            scaleY = textureAspect / screenAspect;
-        UV = vec2(scaleX, scaleY) * (UV - 0.5) + 0.5;
-    } else {
-        // Letterbox/pillarbox - show entire image with black bars
-        float screenAspect = u_resolution.x / u_resolution.y;
-        float textureAspect = u_tex0_resolution.x / u_tex0_resolution.y;
-        float scaleX = 1., scaleY = 1.;
-        if(textureAspect > screenAspect)
-            scaleY = textureAspect / screenAspect; // Add bars at top and bottom
-        else
-            scaleX = screenAspect / textureAspect;  // Add bars at sides
-        UV = vec2(scaleX, scaleY) * (UV - 0.5) + 0.5;
-    }
+    // Handle Triple Image Mode
+    vec3 col = vec3(0.0);
+    if (u_triple_image_mode) {
+        // Split the screen horizontally into three equal parts
+        float segmentWidth = 1.0 / 3.0;
 
-    float t = T * .2 * u_speed;
+        if (screenUV.x < segmentWidth) {
+            // Left segment - use u_tex0
+            vec2 segmentUV = calculateScaledUV(screenUV, u_tex0_resolution, vec2(0.0, 0.0), vec2(segmentWidth, 1.0));
+            if (segmentUV.x >= 0.0 && segmentUV.x <= 1.0 && segmentUV.y >= 0.0 && segmentUV.y <= 1.0) {
+                // Apply rain distortion to the UV
+                vec2 distortedUV = segmentUV;
+                if(u_rain_enabled) {
+                    float t = T * .2 * u_speed;
+                    float zoom = u_panning ? -cos(T * .2) : 0.;
+                    // Use local uv for distortion calculation
+                    vec2 local_uv = (gl_FragCoord.xy - .5 * u_resolution.xy) / u_resolution.y;
+                    local_uv *= (.7 + zoom * .3) * u_zoom;
 
-    vec2 n = vec2(0.0, 0.0); // default to no distortion
-    float rainAmount = u_intensity;
+                    float rainAmount = u_intensity;
+                    float staticDrops = S(-.5, 1., rainAmount) * 2.;
+                    float layer1 = S(.25, .75, rainAmount);
+                    float layer2 = S(.0, .5, rainAmount);
 
-    // Only calculate rain effects if enabled
-    if(u_rain_enabled) {
-        float zoom = u_panning ? -cos(T * .2) : 0.;
-        uv *= (.7 + zoom * .3) * u_zoom;
+                    vec2 c = Drops(local_uv, t, staticDrops, layer1, layer2);
+                    #ifdef CHEAP_NORMALS
+                    vec2 n = vec2(dFdx(c.x), dFdy(c.x));
+                    #else
+                    vec2 e = vec2(.001, 0.) * u_normal;
+                    float cx = Drops(local_uv + e, t, staticDrops, layer1, layer2).x;
+                    float cy = Drops(local_uv + e.yx, t, staticDrops, layer1, layer2).x;
+                    vec2 n = vec2(cx - c.x, cy - c.x);
+                    #endif
+                    distortedUV += n;
+                }
 
-        float staticDrops = S(-.5, 1., rainAmount) * 2.;
-        float layer1 = S(.25, .75, rainAmount);
-        float layer2 = S(.0, .5, rainAmount);
-
-        vec2 c = Drops(uv, t, staticDrops, layer1, layer2);
-        #ifdef CHEAP_NORMALS
-        n = vec2(dFdx(c.x), dFdy(c.x));// cheap normals (3x cheaper, but 2 times shittier ;))
-        #else
-        vec2 e = vec2(.001, 0.) * u_normal;
-        float cx = Drops(uv + e, t, staticDrops, layer1, layer2).x;
-        float cy = Drops(uv + e.yx, t, staticDrops, layer1, layer2).x;
-        n = vec2(cx - c.x, cy - c.x);  // expensive normals
-        #endif
-    }
-
-    vec2 texUV = UV + n;
-    vec3 col;
-    if(texUV.x < 0.0 || texUV.x > 1.0 || texUV.y < 0.0 || texUV.y > 1.0) {
-        col = vec3(0.0); // black outside the UV range
-    } else {
-        col = texture2D(u_tex0, texUV).rgb;
-    }
-    vec4 texCoord = vec4(texUV.x, texUV.y, 0, 1.0 * 25. * 0.01 / 7.);
-
-    if(u_blur_iterations != 1) {
-        float blur = u_blur_intensity;
-        blur *= 0.01;
-        float a = N21(gl_FragCoord.xy) * 6.2831;
-        for(int m = 0; m < 64; m++) {
-            if(m > u_blur_iterations)
-                break;
-            vec2 offs = vec2(sin(a), cos(a)) * blur;
-            float d = fract(sin((float(m) + 1.) * 546.) * 5424.);
-            d = sqrt(d);
-            offs *= d;
-            vec2 blurUV = texCoord.xy + vec2(offs.x, offs.y);
-            // no blurring outside the UV range
-            if(blurUV.x >= 0.0 && blurUV.x <= 1.0 && blurUV.y >= 0.0 && blurUV.y <= 1.0) {
-                col += texture2D(u_tex0, texCoord.xy + vec2(offs.x, offs.y)).xyz;
+                // Sample the texture
+                if(distortedUV.x >= 0.0 && distortedUV.x <= 1.0 && distortedUV.y >= 0.0 && distortedUV.y <= 1.0) {
+                    col = texture2D(u_tex0, distortedUV).rgb;
+                }
             }
-            a++;
+        } else if (screenUV.x < 2.0 * segmentWidth) {
+            // Middle segment - use u_tex1
+            vec2 segmentUV = calculateScaledUV(screenUV, u_tex1_resolution, vec2(segmentWidth, 0.0), vec2(segmentWidth, 1.0));
+            if (segmentUV.x >= 0.0 && segmentUV.x <= 1.0 && segmentUV.y >= 0.0 && segmentUV.y <= 1.0) {
+                // Apply rain distortion to the UV
+                vec2 distortedUV = segmentUV;
+                if(u_rain_enabled) {
+                    float t = T * .2 * u_speed;
+                    float zoom = u_panning ? -cos(T * .2) : 0.;
+                    // Use local uv for distortion calculation
+                    vec2 local_uv = (gl_FragCoord.xy - .5 * u_resolution.xy) / u_resolution.y;
+                    local_uv *= (.7 + zoom * .3) * u_zoom;
+
+                    float rainAmount = u_intensity;
+                    float staticDrops = S(-.5, 1., rainAmount) * 2.;
+                    float layer1 = S(.25, .75, rainAmount);
+                    float layer2 = S(.0, .5, rainAmount);
+
+                    vec2 c = Drops(local_uv, t, staticDrops, layer1, layer2);
+                    #ifdef CHEAP_NORMALS
+                    vec2 n = vec2(dFdx(c.x), dFdy(c.x));
+                    #else
+                    vec2 e = vec2(.001, 0.) * u_normal;
+                    float cx = Drops(local_uv + e, t, staticDrops, layer1, layer2).x;
+                    float cy = Drops(local_uv + e.yx, t, staticDrops, layer1, layer2).x;
+                    vec2 n = vec2(cx - c.x, cy - c.x);
+                    #endif
+                    distortedUV += n;
+                }
+
+                // Sample the texture
+                if(distortedUV.x >= 0.0 && distortedUV.x <= 1.0 && distortedUV.y >= 0.0 && distortedUV.y <= 1.0) {
+                    col = texture2D(u_tex1, distortedUV).rgb;
+                }
+            }
+        } else {
+            // Right segment - use u_tex2
+            vec2 segmentUV = calculateScaledUV(screenUV, u_tex2_resolution, vec2(2.0 * segmentWidth, 0.0), vec2(segmentWidth, 1.0));
+            if (segmentUV.x >= 0.0 && segmentUV.x <= 1.0 && segmentUV.y >= 0.0 && segmentUV.y <= 1.0) {
+                // Apply rain distortion to the UV
+                vec2 distortedUV = segmentUV;
+                if(u_rain_enabled) {
+                    float t = T * .2 * u_speed;
+                    float zoom = u_panning ? -cos(T * .2) : 0.;
+                    // Use local uv for distortion calculation
+                    vec2 local_uv = (gl_FragCoord.xy - .5 * u_resolution.xy) / u_resolution.y;
+                    local_uv *= (.7 + zoom * .3) * u_zoom;
+
+                    float rainAmount = u_intensity;
+                    float staticDrops = S(-.5, 1., rainAmount) * 2.;
+                    float layer1 = S(.25, .75, rainAmount);
+                    float layer2 = S(.0, .5, rainAmount);
+
+                    vec2 c = Drops(local_uv, t, staticDrops, layer1, layer2);
+                    #ifdef CHEAP_NORMALS
+                    vec2 n = vec2(dFdx(c.x), dFdy(c.x));
+                    #else
+                    vec2 e = vec2(.001, 0.) * u_normal;
+                    float cx = Drops(local_uv + e, t, staticDrops, layer1, layer2).x;
+                    float cy = Drops(local_uv + e.yx, t, staticDrops, layer1, layer2).x;
+                    vec2 n = vec2(cx - c.x, cy - c.x);
+                    #endif
+                    distortedUV += n;
+                }
+
+                // Sample the texture
+                if(distortedUV.x >= 0.0 && distortedUV.x <= 1.0 && distortedUV.y >= 0.0 && distortedUV.y <= 1.0) {
+                    col = texture2D(u_tex2, distortedUV).rgb;
+                }
+            }
         }
-        col /= float(u_blur_iterations + 2);
+    } else {
+        // Standard single image mode
+        // When u_texture_fill is true, scale to fill (current behavior)
+        // When u_texture_fill is false, maintain aspect ratio with letterbox/pillarbox
+        vec2 UV = screenUV;
+        if(u_texture_fill) {
+            // Scale to fill - image covers entire screen, may crop edges
+            float screenAspect = u_resolution.x / u_resolution.y;
+            float textureAspect = u_tex0_resolution.x / u_tex0_resolution.y;
+            float scaleX = 1., scaleY = 1.;
+            if(textureAspect > screenAspect )
+                scaleX = screenAspect / textureAspect;
+            else
+                scaleY = textureAspect / screenAspect;
+            UV = vec2(scaleX, scaleY) * (UV - 0.5) + 0.5;
+        } else {
+            // Letterbox/pillarbox - show entire image with black bars
+            float screenAspect = u_resolution.x / u_resolution.y;
+            float textureAspect = u_tex0_resolution.x / u_tex0_resolution.y;
+            float scaleX = 1., scaleY = 1.;
+            if(textureAspect > screenAspect)
+                scaleY = textureAspect / screenAspect; // Add bars at top and bottom
+            else
+                scaleX = screenAspect / textureAspect;  // Add bars at sides
+            UV = vec2(scaleX, scaleY) * (UV - 0.5) + 0.5;
+        }
+
+        float t = T * .2 * u_speed;
+
+        vec2 n = vec2(0.0, 0.0); // default to no distortion
+        float rainAmount = u_intensity;
+
+        // Only calculate rain effects if enabled
+        if(u_rain_enabled) {
+            float zoom = u_panning ? -cos(T * .2) : 0.;
+            uv *= (.7 + zoom * .3) * u_zoom;
+
+            float staticDrops = S(-.5, 1., rainAmount) * 2.;
+            float layer1 = S(.25, .75, rainAmount);
+            float layer2 = S(.0, .5, rainAmount);
+
+            vec2 c = Drops(uv, t, staticDrops, layer1, layer2);
+            #ifdef CHEAP_NORMALS
+            n = vec2(dFdx(c.x), dFdy(c.x));// cheap normals (3x cheaper, but 2 times shittier ;))
+            #else
+            vec2 e = vec2(.001, 0.) * u_normal;
+            float cx = Drops(uv + e, t, staticDrops, layer1, layer2).x;
+            float cy = Drops(uv + e.yx, t, staticDrops, layer1, layer2).x;
+            n = vec2(cx - c.x, cy - c.x);  // expensive normals
+            #endif
+        }
+
+        vec2 texUV = UV + n;
+        if(texUV.x < 0.0 || texUV.x > 1.0 || texUV.y < 0.0 || texUV.y > 1.0) {
+            col = vec3(0.0); // black outside the UV range
+        } else {
+            col = texture2D(u_tex0, texUV).rgb;
+        }
+
+        vec4 texCoord = vec4(texUV.x, texUV.y, 0, 1.0 * 25. * 0.01 / 7.);
+
+        if(u_blur_iterations != 1) {
+            float blur = u_blur_intensity;
+            blur *= 0.01;
+            float a = N21(gl_FragCoord.xy) * 6.2831;
+            for(int m = 0; m < 64; m++) {
+                if(m > u_blur_iterations)
+                    break;
+                vec2 offs = vec2(sin(a), cos(a)) * blur;
+                float d = fract(sin((float(m) + 1.) * 546.) * 5424.);
+                d = sqrt(d);
+                offs *= d;
+                vec2 blurUV = texCoord.xy + vec2(offs.x, offs.y);
+                // no blurring outside the UV range
+                if(blurUV.x >= 0.0 && blurUV.x <= 1.0 && blurUV.y >= 0.0 && blurUV.y <= 1.0) {
+                    col += texture2D(u_tex0, texCoord.xy + vec2(offs.x, offs.y)).xyz;
+                }
+                a++;
+            }
+            col /= float(u_blur_iterations + 2);
+        }
     }
 
-    t = (T + 3.) * .5;			// make time sync with first lightnoing
+
+    // Apply post-processing effects
+    float t = (T + 3.) * .5; // make time sync with first lightnoing
     if(u_post_processing) {
         //float colFade = sin(t * .2) * .5 + .5;
-        col *= mix(vec3(1.), vec3(.8, .9, 1.3), 1.);	// subtle color shift
+        col *= mix(vec3(1.), vec3(.8, .9, 1.3), 1.);// subtle color shift
     }
-    float fade = S(0., 10., T);							// fade in at the start
+    float fade = S(0., 10., T); // fade in at the start
 
     if(u_lightning) {
-        float lightning = sin(t * sin(t * 10.));				// lighting flicker
-        lightning *= pow(max(0., sin(t + sin(t))), 10.);		// lightning flash
-        col *= 1. + lightning * fade * mix(1., .1, 0.);	// composite lightning
+        float lightning = sin(t * sin(t * 10.)); // lighting flicker
+        lightning *= pow(max(0., sin(t + sin(t))), 10.); // lightning flash
+        col *= 1. + lightning * fade * mix(1., .1, 0.); // composite lightning
     }
-    col *= 1. - dot(UV -= .5, UV) * 1.; // vignette
+
+    // Apply vignette effect
+    col *= 1. - dot(screenUV - .5, screenUV - .5) * 1.; // vignette
 
     gl_FragColor = vec4(col * u_brightness, 1);
 }

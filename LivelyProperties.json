@@ -107,6 +107,11 @@
     "value": true,
     "text": "30FPS Lock"
   },
+  "tripleImageMode": {
+    "type": "checkbox",
+    "value": true,
+    "text": "Triple Image Mode"
+  },
   "debug": {
     "type": "checkbox",
     "value": false,
