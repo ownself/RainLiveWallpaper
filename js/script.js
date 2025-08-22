@@ -25,6 +25,10 @@ let settings = { fps: 30, scale: 1.0, parallaxVal: 0 };
 let slideShowInterval = 10; // 幻灯片间隔时间（秒）
 let videoElement;
 
+// --- 过渡效果 ---
+let fadeTransition; // 淡入淡出过渡效果实例
+// --- 过渡效果结束 ---
+
 //custom events
 const sceneLoadedEvent = new Event("sceneLoaded");
 
@@ -77,6 +81,9 @@ async function init() {
   window.addEventListener("resize", (e) => resize());
   render();
   datUI();
+
+  // 初始化过渡效果
+  fadeTransition = new FadeTransition(scene, camera, renderer, material);
 
   document.dispatchEvent(sceneLoadedEvent);
 }
@@ -470,14 +477,25 @@ function changeBackgroundToNextImage() {
   const imageFile = backgroundImages[imageIndex];
   console.log(`Changing background to: ${imageFile.name} (index: ${imageIndex}, position: ${currentImageIndex + 1}/${backgroundImages.length})`);
 
-  // 重用现有的单张图片加载逻辑，但使用 File 对象
-  disposeVideoElement(videoElement); // 如果之前有视频，先清理
-  material.uniforms.u_tex0.value?.dispose(); // 清理旧纹理
-
   // 使用 File 对象创建对象 URL 并加载
   new THREE.TextureLoader().load(URL.createObjectURL(imageFile), function (tex) {
-    material.uniforms.u_tex0.value = tex;
-    material.uniforms.u_tex0_resolution.value = new THREE.Vector2(tex.image.width, tex.image.height);
+    // 如果正在过渡，则跳过本次切换
+    if (fadeTransition && fadeTransition.isTransitioning) {
+      console.log("Transition in progress, skipping image change.");
+      tex.dispose(); // 清理刚刚加载的纹理
+      return;
+    }
+
+    // 启动淡入淡出过渡效果
+    if (fadeTransition) {
+      fadeTransition.startTransition(tex, new THREE.Vector2(tex.image.width, tex.image.height));
+    } else {
+      // 如果没有过渡效果实例，则直接切换
+      disposeVideoElement(videoElement); // 如果之前有视频，先清理
+      material.uniforms.u_tex0.value?.dispose(); // 清理旧纹理
+      material.uniforms.u_tex0.value = tex;
+      material.uniforms.u_tex0_resolution.value = new THREE.Vector2(tex.image.width, tex.image.height);
+    }
   });
 
   // 更新索引，如果已遍历完所有图片，则重新打乱索引数组
