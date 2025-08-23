@@ -8,7 +8,6 @@ let devicePixelRatio = window.devicePixelRatio || 1;
 // --- 新增变量 ---
 let backgroundImages = []; // 存储从文件夹读取的图片文件对象
 let backgroundVideos = []; // 存储从文件夹读取的视频文件对象
-// let backgroundChangeIntervalId = null; // 存储定时器ID (已移除)
 let isFolderMode = false; // 标记是否处于文件夹模式
 let isVideoLoop = true;
 let currentVideoElement = null; // 当前播放的视频元素
@@ -26,7 +25,6 @@ let nextTripleImageSlot = 0; // 下一个要替换的图片槽位 (0, 1, 2)
 // --- 新增：用于独立定时器管理 ---
 let imageChangeTimers = {}; // 存储每个图片槽位的定时器ID {0: id, 1: id, 2: id}
 let videoChangeTimer = null;   // 存储视频切换的定时器ID
-// --- 新增结束 ---
 // --- 新增结束 ---
 
 let scene, camera, renderer, material;
@@ -164,10 +162,6 @@ document.getElementById("folderPicker").addEventListener("change", function (eve
     // 清空之前的列表和定时器
     backgroundImages = [];
     backgroundVideos = [];
-    if (backgroundChangeIntervalId) {
-      clearInterval(backgroundChangeIntervalId);
-      backgroundChangeIntervalId = null;
-    }
     // 清理当前视频元素
     if (currentVideoElement) {
       disposeVideoElement(currentVideoElement);
@@ -321,23 +315,17 @@ function livelyPropertyListener(name, val) {
         //     videoChangeTimer = null;
         // }
         // 立即切换到下一张图片/视频 或 重新设置独立定时器
-        // --- 修复：移除对未定义变量 isVideoFolderMode 的引用 ---
-        // if (isVideoFolderMode) {
-        //     changeBackgroundToNextVideo(); // This function is deprecated
-        // } else {
-            if (isTripleImageMode) {
-                // 重新设置独立定时器
-                if (typeof setupIndependentImageTimers === 'function') {
-                    setupIndependentImageTimers();
-                } else {
-                     console.error("setupIndependentImageTimers function is not available in livelyPropertyListener::slideShowInterval");
-                }
+        if (isTripleImageMode) {
+            // 重新设置独立定时器
+            if (typeof window.setupIndependentImageTimers === 'function') {
+                window.setupIndependentImageTimers();
             } else {
-                // 对于单图模式，立即切换并设置新的定时器
-                changeBackgroundToNextImage();
+                 console.error("setupIndependentImageTimers function is not available in livelyPropertyListener::slideShowInterval");
             }
-        // }
-        // --- 修复结束 ---
+        } else {
+            // 对于单图模式，立即切换并设置新的定时器
+            changeBackgroundToNextImage();
+        }
       }
       break;
     case "rainEnabled":
@@ -441,23 +429,17 @@ function datUI() {
         //     videoChangeTimer = null;
         // }
         // 立即切换到下一张图片/视频 或 重新设置独立定时器
-        // --- 修复：移除对未定义变量 isVideoFolderMode 的引用 ---
-        // if (isVideoFolderMode) {
-        //     changeBackgroundToNextVideo(); // This function is deprecated
-        // } else {
-            if (isTripleImageMode) {
-                // 重新设置独立定时器
-                if (typeof setupIndependentImageTimers === 'function') {
-                    setupIndependentImageTimers();
-                } else {
-                     console.error("setupIndependentImageTimers function is not available in bg.add::slideShowIntervalSetting::onChange");
-                }
+        if (isTripleImageMode) {
+            // 重新设置独立定时器
+            if (typeof window.setupIndependentImageTimers === 'function') {
+                window.setupIndependentImageTimers();
             } else {
-                // 对于单图模式，立即切换并设置新的定时器
-                changeBackgroundToNextImage();
+                 console.error("setupIndependentImageTimers function is not available in bg.add::slideShowIntervalSetting::onChange");
             }
-        // }
-        // --- 修复结束 ---
+        } else {
+            // 对于单图模式，立即切换并设置新的定时器
+            changeBackgroundToNextImage();
+        }
       }
       // 通知Lively属性变更
       if (typeof livelyPropertyListener === 'function') {
@@ -653,278 +635,12 @@ async function processFolderPaths(mediaUrls) {
 }
 // --- 新增结束 ---
 
-// --- 修改：更换到下一个背景图片的函数，支持 File 对象和 URL 字符串 ---
-// --- 修改为：为每个图片槽位设置独立的随机定时器 ---
-
-// 保留原来的函数，但仅用于初始加载三张图片
-// loadInitialTripleImages 函数已被移至独立文件 js/loadInitialTripleImages.js
-
-function setupIndependentImageTimers() {
-    if (!isFolderMode || backgroundImages.length === 0 || !isTripleImageMode) {
-        console.warn("Cannot setup independent timers: Not in triple image folder mode.");
-        return;
-    }
-
-    console.log("Setting up independent random timers for each image slot.");
-
-    // 清除所有现有的定时器
-    Object.values(imageChangeTimers).forEach(id => clearTimeout(id));
-    imageChangeTimers = {};
-
-    // 为每个槽位设置独立的定时器
-    for (let slot = 0; slot < 3; slot++) {
-        scheduleImageChangeForSlot(slot);
-    }
-}
-
-function scheduleImageChangeForSlot(slot) {
-    // 计算随机间隔时间 (slideShowInterval 到 slideShowInterval * 2 之间)
-    const randomInterval = (slideShowInterval + Math.random() * slideShowInterval) * 1000;
-    console.log(`Scheduling next image change for slot ${slot} in ${randomInterval / 1000} seconds.`);
-
-    // 设置新的定时器
-    const timerId = setTimeout(() => {
-        changeBackgroundForSlot(slot);
-        // 递归调用以设置下一次定时器
-        // scheduleImageChangeForSlot(slot);
-    }, randomInterval);
-
-    // 存储定时器ID
-    imageChangeTimers[slot] = timerId;
-}
-
-// Modify changeBackgroundForSlot to handle both images and videos
-// --- 注意：这部分代码似乎已被 loadInitialTripleImages.js 中的版本取代，为保持一致性也进行更新 ---
-function changeBackgroundForSlot(slot) {
-    if (!isFolderMode || backgroundImages.length === 0 || !isTripleImageMode) {
-        return;
-    }
-
-    console.log(`Changing background for slot ${slot}`);
-
-    // Helper function to get the media source (File object or URL string) and its name, and determine type
-    // --- 更新此函数以使用新的路径解析逻辑 ---
-    function getMediaSourceAndName(index) {
-        const item = backgroundImages[index];
-        if (item instanceof File) {
-            const isVideo = item.type.startsWith('video/');
-            return { source: URL.createObjectURL(item), name: item.name, isFile: true, isVideo: isVideo };
-        } else if (typeof item === 'string') {
-            // Extract filename from path for logging
-            const parts = item.split('/');
-            const name = parts[parts.length - 1];
-            // Basic check for video extension
-            const lowerName = name.toLowerCase();
-            const isVideo = lowerName.endsWith('.mp4') || lowerName.endsWith('.webm') || lowerName.endsWith('.ogg');
-
-            // --- 关键修改：直接返回原始相对路径字符串 ---
-            // Lively 应该能够直接解析相对于 index.html 的路径
-            console.log(`[script.js::changeBackgroundForSlot::getMediaSourceAndName] Using relative path directly: '${item}'`);
-            return { source: item, name: name, isFile: false, isVideo: isVideo };
-            // --- 修改结束 ---
-        }
-        return { source: null, name: 'unknown', isFile: false, isVideo: false };
-    }
-
-    // 检查是否需要重新打乱索引（当 currentImageIndex 超出范围时）
-    if (currentImageIndex >= backgroundImages.length) {
-        console.log("Triple Mode: All images shown, reshuffling indices.");
-        initializeAndShuffleIndices(imageIndices, backgroundImages.length);
-        currentImageIndex = 0;
-    }
-
-    // 获取下一张要加载的媒体索引和文件
-    const nextMediaIndex = imageIndices[currentImageIndex];
-    const nextMediaInfo = getMediaSourceAndName(nextMediaIndex);
-    console.log(`Triple Mode: Loading next media for slot ${slot}: ${nextMediaInfo.name} (index: ${nextMediaIndex}) (shuffleInex: ${currentImageIndex})`);
-
-    // Increment index for the next media
-    currentImageIndex++;
-
-    if (nextMediaInfo.isVideo) {
-        // Handle video
-        try {
-            // Create video element
-            const videoElement = createVideoElement(nextMediaInfo.source, false); // Do not loop auto-loaded videos by default, let 'ended' event handle it
-
-            // Add event listener for when the video ends
-            videoElement.addEventListener('ended', function onVideoEnded() {
-                console.log(`Video ${nextMediaInfo.name} in slot ${slot} ended.`);
-
-                // Revoke object URL if it was created
-                if (nextMediaInfo.isFile) URL.revokeObjectURL(nextMediaInfo.source);
-
-                // Call changeBackgroundForSlot again for this slot to load the next media
-                // Add a small delay to ensure cleanup is complete
-                setTimeout(() => {
-                    changeBackgroundForSlot(slot);
-                }, 100);
-            }, { once: true }); // Use { once: true } to automatically remove the listener after it fires
-
-            // Create VideoTexture
-            const videoTexture = new THREE.VideoTexture(videoElement);
-
-            // Wait for metadata to load the resolution
-            videoElement.addEventListener("loadedmetadata", function onMetadataLoaded() {
-                // Update material uniforms with the new video texture and resolution
-                let oldTextureToDispose = null;
-                switch (slot) {
-                    case 0:
-                        oldTextureToDispose = material.uniforms.u_tex0.value;
-                        material.uniforms.u_tex0.value = videoTexture;
-                        material.uniforms.u_tex0_resolution.value = new THREE.Vector2(videoTexture.image.videoWidth, videoTexture.image.videoHeight);
-                        tripleImageIndices[0] = nextMediaIndex; // Update index record
-                        break;
-                    case 1:
-                        oldTextureToDispose = material.uniforms.u_tex1.value;
-                        material.uniforms.u_tex1.value = videoTexture;
-                        material.uniforms.u_tex1_resolution.value = new THREE.Vector2(videoTexture.image.videoWidth, videoTexture.image.videoHeight);
-                        tripleImageIndices[1] = nextMediaIndex; // Update index record
-                        break;
-                    case 2:
-                        oldTextureToDispose = material.uniforms.u_tex2.value;
-                        material.uniforms.u_tex2.value = videoTexture;
-                        material.uniforms.u_tex2_resolution.value = new THREE.Vector2(videoTexture.image.videoWidth, videoTexture.image.videoHeight);
-                        tripleImageIndices[2] = nextMediaIndex; // Update index record
-                        break;
-                }
-
-                // Clean up the old texture
-                if (oldTextureToDispose && oldTextureToDispose !== videoTexture) {
-                    // If the old texture was a video texture, dispose its underlying video element too
-                    if (oldTextureToDispose instanceof THREE.VideoTexture && oldTextureToDispose.image) {
-                        disposeVideoElement(oldTextureToDispose.image);
-                    }
-                    oldTextureToDispose.dispose();
-                }
-
-                console.log(`Triple Mode: Replaced media in slot ${slot} with video ${nextMediaInfo.name}. Slots now: [${tripleImageIndices[0]}, ${tripleImageIndices[1]}, ${tripleImageIndices[2]}]`);
-
-                // Revoke the object URL for the loaded video after it's used
-                // Note: For videos, we might not revoke immediately as it's still playing
-                // The URL will be revoked in the 'ended' event listener or on error
-
-            }, { once: true });
-
-            // Add error listener
-            videoElement.addEventListener("error", function onVideoError(e) {
-                console.error(`Error loading video for slot ${slot}:`, e);
-                // Revoke object URL on error
-                if (nextMediaInfo.isFile) URL.revokeObjectURL(nextMediaInfo.source);
-                // Clean up video texture
-                videoTexture.dispose();
-                // Dispose video element
-                disposeVideoElement(videoElement);
-                // Increment index and try next media
-                // currentImageIndex++;
-                // Add a small delay before retrying
-                setTimeout(() => {
-                    changeBackgroundForSlot(slot);
-                }, 1000);
-            }, { once: true });
-
-        } catch (error) {
-            console.error(`Error creating video element for slot ${slot}:`, error);
-            // Revoke object URL on error
-            if (nextMediaInfo.isFile) URL.revokeObjectURL(nextMediaInfo.source);
-            // Increment index and try next media
-            // currentImageIndex++;
-            // Add a small delay before retrying
-            setTimeout(() => {
-                changeBackgroundForSlot(slot);
-            }, 1000);
-        }
-
-    } else {
-        // Handle image (existing logic)
-        // 加载下一张图片
-        new THREE.TextureLoader().load(nextMediaInfo.source, function (newTexture) {
-            // 如果正在过渡，则跳过本次切换
-            if (fadeTransition && fadeTransition.isTransitioning) {
-                console.log(`Transition in progress, skipping image change for slot ${slot}.`);
-                newTexture.dispose();
-                // Revoke object URL on skip
-                if (nextMediaInfo.isFile) URL.revokeObjectURL(nextMediaInfo.source);
-                return;
-            }
-
-            // 根据 slot 决定替换哪张贴图
-            let oldTextureToDispose = null;
-            switch (slot) {
-                case 0:
-                    oldTextureToDispose = material.uniforms.u_tex0.value;
-                    material.uniforms.u_tex0.value = newTexture;
-                    material.uniforms.u_tex0_resolution.value = new THREE.Vector2(newTexture.image.width, newTexture.image.height);
-                    tripleImageIndices[0] = nextMediaIndex; // 更新索引记录
-                    break;
-                case 1:
-                    oldTextureToDispose = material.uniforms.u_tex1.value;
-                    material.uniforms.u_tex1.value = newTexture;
-                    material.uniforms.u_tex1_resolution.value = new THREE.Vector2(newTexture.image.width, newTexture.image.height);
-                    tripleImageIndices[1] = nextMediaIndex; // 更新索引记录
-                    break;
-                case 2:
-                    oldTextureToDispose = material.uniforms.u_tex2.value;
-                    material.uniforms.u_tex2.value = newTexture;
-                    material.uniforms.u_tex2_resolution.value = new THREE.Vector2(newTexture.image.width, newTexture.image.height);
-                    tripleImageIndices[2] = nextMediaIndex; // 更新索引记录
-                    break;
-            }
-
-            // 清理被替换的旧纹理
-            if (oldTextureToDispose) {
-                oldTextureToDispose.dispose();
-            }
-
-            scheduleImageChangeForSlot(slot); // 重新安排该槽位的下一次更换
-
-            console.log(`Triple Mode: Replaced media in slot ${slot} with image ${nextMediaInfo.name}. Slots now: [${tripleImageIndices[0]}, ${tripleImageIndices[1]}, ${tripleImageIndices[2]}]`);
-
-            // Revoke the object URL for the loaded image after it's used
-            if (nextMediaInfo.isFile) URL.revokeObjectURL(nextMediaInfo.source);
-
-        }, undefined, function(error) {
-            console.error(`Error loading texture for slot ${slot} in triple mode:`, error);
-            // Revoke object URL on error
-            if (nextMediaInfo.isFile) URL.revokeObjectURL(nextMediaInfo.source);
-            // Try next media
-            // currentImageIndex++;
-            // Add a small delay before retrying
-            setTimeout(() => {
-                changeBackgroundForSlot(slot);
-            }, 1000);
-        });
-    }
-
-    // 更新 currentImageIndex，准备下下一张图片（对于视频，实际切换在 'ended' 事件中处理）
-    // For images, increment now. For videos, it's handled in the 'ended' callback.
-    // To simplify, we always increment here, and the 'ended' callback will just call the function again.
-    // This ensures that if a video fails to load, the next item is still fetched.
-    if (!nextMediaInfo.isVideo) {
-        // currentImageIndex++;
-    } else {
-        // For video, we increment after it ends or fails
-        // This is handled in the event listeners
-    }
-
-    // 再次检查是否需要重新打乱（在加载完成后）
-    if (currentImageIndex >= backgroundImages.length) {
-        console.log("Triple Mode: All images shown during single replacement cycle, reshuffling indices.");
-        initializeAndShuffleIndices(imageIndices, backgroundImages.length);
-        currentImageIndex = 0;
-    }
-}
-
-
-// --- 修改结束 ---
-
-// --- 新增：播放下一个背景视频的函数 ---
-// 注意：这个函数现在主要用于兼容旧的视频处理逻辑，新的文件夹模式会统一处理图片和视频
-function changeBackgroundToNextVideo() {
-  // 不再使用独立的视频处理逻辑，统一在changeBackgroundForSlot中处理
-  console.warn("changeBackgroundToNextVideo is deprecated. Use changeBackgroundForSlot instead.");
-}
-// --- 新增结束 ---
+// These functions have been moved to loadInitialTripleImages.js and are now available on the window object.
+// They are no longer needed in this file.
+// - setupIndependentImageTimers
+// - scheduleImageChangeForSlot
+// - changeBackgroundForSlot
+// - changeBackgroundToNextVideo (deprecated)
 
 //ref: https://stackoverflow.com/questions/3258587/how-to-properly-unload-destroy-a-video-element
 function disposeVideoElement(video) {
