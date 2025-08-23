@@ -10,6 +10,7 @@ let backgroundImages = []; // 存储从文件夹读取的图片文件对象
 let backgroundVideos = []; // 存储从文件夹读取的视频文件对象
 // let backgroundChangeIntervalId = null; // 存储定时器ID (已移除)
 let isFolderMode = false; // 标记是否处于文件夹模式
+let isVideoFolderMode = false; // 标记是否处于视频文件夹模式
 let isVideoLoop = true;
 let currentVideoElement = null; // 当前播放的视频元素
 // 用于不重复随机遍历的索引数组
@@ -102,13 +103,13 @@ async function init() {
       const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'];
       const videoExtensions = ['.mp4', '.webm', '.ogg']; // Add common video extensions
       const mediaUrls = mediaFiles.map(file => `media/${file}`); // Prepend 'media/' to form full relative path
-
+      
       // Separate images and videos
       const imageUrls = mediaUrls.filter(url => {
         const lowerUrl = url.toLowerCase();
         return imageExtensions.some(ext => lowerUrl.endsWith(ext));
       });
-
+      
       const videoUrls = mediaUrls.filter(url => {
         const lowerUrl = url.toLowerCase();
         return videoExtensions.some(ext => lowerUrl.endsWith(ext));
@@ -117,7 +118,7 @@ async function init() {
       if (imageUrls.length > 0 || videoUrls.length > 0) {
         console.log("Auto-starting folder mode with media from list.json");
         // Pass both images and videos
-        await processFolderPaths([...imageUrls, ...videoUrls]);
+        await processFolderPaths([...imageUrls, ...videoUrls]); 
         autoLoaded = true;
       } else {
         console.warn("No valid image or video files found in the list.json");
@@ -159,8 +160,9 @@ document.getElementById("folderPicker").addEventListener("change", function (eve
   const imageFiles = files.filter(file => file.type.startsWith('image/'));
   const videoFiles = files.filter(file => file.type.startsWith('video/'));
 
-  // 判断文件夹模式 - 统一处理图片和视频
-  if (imageFiles.length > 0 || videoFiles.length > 0) {
+  // 判断文件夹模式
+  if (videoFiles.length > 0) {
+    // --- 视频逻辑保持不变 ---
     // 清空之前的列表和定时器
     backgroundImages = [];
     backgroundVideos = [];
@@ -180,12 +182,32 @@ document.getElementById("folderPicker").addEventListener("change", function (eve
     nextTripleImageSlot = 0;
 
     isFolderMode = true; // 进入文件夹模式
+    isVideoFolderMode = true; // 是视频文件夹模式
 
-    // 合并图片和视频文件
-    const allMediaFiles = [...imageFiles, ...videoFiles];
+    // 如果存在视频文件，进入视频文件夹模式
+    backgroundVideos = videoFiles;
+    if (videoFiles.length > 1) {
+        isVideoLoop = false; // disable looping if multiple videos are present
+    } else {
+        isVideoLoop = true; // enable looping if only one video is present
+    }
 
-    // 使用新的处理函数
-    processFolderPaths(allMediaFiles); // Pass the File objects directly
+    if (backgroundVideos.length === 0) {
+      console.warn("No video files found in the selected folder.");
+      return;
+    }
+    console.log(`Loaded ${backgroundVideos.length} videos from folder.`);
+
+    // 初始化视频索引数组并打乱
+    initializeAndShuffleIndices(videoIndices, backgroundVideos.length);
+    currentVideoIndex = 0;
+
+    // 立即加载第一个视频
+    changeBackgroundToNextVideo();
+    // --- 视频逻辑结束 ---
+  } else if (imageFiles.length > 0) {
+    // 如果只有图片文件，使用新的处理函数
+    processFolderPaths(imageFiles); // Pass the File objects directly
   } else {
     console.warn("No image or video files found in the selected folder.");
     return;
@@ -564,8 +586,8 @@ function initializeAndShuffleIndices(indicesArray, length) {
 }
 
 // --- 新增：处理文件夹路径列表的函数 ---
-async function processFolderPaths(mediaUrls) {
-  if (mediaUrls.length === 0) return Promise.resolve();
+async function processFolderPaths(imageUrls) {
+  if (imageUrls.length === 0) return Promise.resolve();
 
   // Clear previous state
   backgroundImages = [];
@@ -589,11 +611,12 @@ async function processFolderPaths(mediaUrls) {
   nextTripleImageSlot = 0;
 
   isFolderMode = true; // Enter folder mode
+  isVideoFolderMode = false; // Not video mode
 
   // Store the URLs directly
-  backgroundImages = mediaUrls;
+  backgroundImages = imageUrls;
 
-  console.log(`Loaded ${backgroundImages.length} media files from list.`);
+  console.log(`Loaded ${backgroundImages.length} images from list.`);
 
   // Initialize and shuffle image indices
   initializeAndShuffleIndices(imageIndices, backgroundImages.length);
@@ -642,17 +665,17 @@ async function processFolderPaths(mediaUrls) {
 // loadInitialTripleImages 函数已被移至独立文件 js/loadInitialTripleImages.js
 
 function setupIndependentImageTimers() {
-    if (!isFolderMode || backgroundImages.length === 0 || !isTripleImageMode) {
+    if (!isFolderMode || isVideoFolderMode || backgroundImages.length === 0 || !isTripleImageMode) {
         console.warn("Cannot setup independent timers: Not in triple image folder mode.");
         return;
     }
-
+    
     console.log("Setting up independent random timers for each image slot.");
-
+    
     // 清除所有现有的定时器
     Object.values(imageChangeTimers).forEach(id => clearTimeout(id));
     imageChangeTimers = {};
-
+    
     // 为每个槽位设置独立的定时器
     for (let slot = 0; slot < 3; slot++) {
         scheduleImageChangeForSlot(slot);
@@ -663,26 +686,26 @@ function scheduleImageChangeForSlot(slot) {
     // 计算随机间隔时间 (slideShowInterval 到 slideShowInterval * 2 之间)
     const randomInterval = (slideShowInterval + Math.random() * slideShowInterval) * 1000;
     console.log(`Scheduling next image change for slot ${slot} in ${randomInterval / 1000} seconds.`);
-
+    
     // 设置新的定时器
     const timerId = setTimeout(() => {
         changeBackgroundForSlot(slot);
         // 递归调用以设置下一次定时器
         scheduleImageChangeForSlot(slot);
     }, randomInterval);
-
+    
     // 存储定时器ID
     imageChangeTimers[slot] = timerId;
 }
 
 // Modify changeBackgroundForSlot to handle both images and videos
 function changeBackgroundForSlot(slot) {
-    if (!isFolderMode || backgroundImages.length === 0 || !isTripleImageMode) {
+    if (!isFolderMode || isVideoFolderMode || backgroundImages.length === 0 || !isTripleImageMode) {
         return;
     }
-
+    
     console.log(`Changing background for slot ${slot}`);
-
+    
     // Helper function to get the media source (File object or URL string) and its name, and determine type
     function getMediaSourceAndName(index) {
         const item = backgroundImages[index];
@@ -700,45 +723,45 @@ function changeBackgroundForSlot(slot) {
         }
         return { source: null, name: 'unknown', isFile: false, isVideo: false };
     }
-
+    
     // 检查是否需要重新打乱索引（当 currentImageIndex 超出范围时）
     if (currentImageIndex >= backgroundImages.length) {
         console.log("Triple Mode: All images shown, reshuffling indices.");
         initializeAndShuffleIndices(imageIndices, backgroundImages.length);
         currentImageIndex = 0;
     }
-
+    
     // 获取下一张要加载的媒体索引和文件
     const nextMediaIndex = imageIndices[currentImageIndex];
     const nextMediaInfo = getMediaSourceAndName(nextMediaIndex);
-    console.log(`Triple Mode: Loading next media for slot ${slot}: ${nextMediaInfo.name} (index: ${nextMediaIndex}) (shuffleInex: ${currentImageIndex})`);
-
-    // Increment index for the next media
-    currentImageIndex++;
-
+    console.log(`Triple Mode: Loading next media for slot ${slot}: ${nextMediaInfo.name} (index: ${nextMediaIndex})`);
+    
     if (nextMediaInfo.isVideo) {
         // Handle video
         try {
             // Create video element
             const videoElement = createVideoElement(nextMediaInfo.source, false); // Do not loop auto-loaded videos by default, let 'ended' event handle it
-
+            
             // Add event listener for when the video ends
             videoElement.addEventListener('ended', function onVideoEnded() {
                 console.log(`Video ${nextMediaInfo.name} in slot ${slot} ended.`);
-
+                
                 // Revoke object URL if it was created
                 if (nextMediaInfo.isFile) URL.revokeObjectURL(nextMediaInfo.source);
-
+                
+                // Increment index for the next media
+                currentImageIndex++;
+                
                 // Call changeBackgroundForSlot again for this slot to load the next media
                 // Add a small delay to ensure cleanup is complete
                 setTimeout(() => {
                     changeBackgroundForSlot(slot);
                 }, 100);
             }, { once: true }); // Use { once: true } to automatically remove the listener after it fires
-
+            
             // Create VideoTexture
             const videoTexture = new THREE.VideoTexture(videoElement);
-
+            
             // Wait for metadata to load the resolution
             videoElement.addEventListener("loadedmetadata", function onMetadataLoaded() {
                 // Update material uniforms with the new video texture and resolution
@@ -763,7 +786,7 @@ function changeBackgroundForSlot(slot) {
                         tripleImageIndices[2] = nextMediaIndex; // Update index record
                         break;
                 }
-
+                
                 // Clean up the old texture
                 if (oldTextureToDispose && oldTextureToDispose !== videoTexture) {
                     // If the old texture was a video texture, dispose its underlying video element too
@@ -772,15 +795,15 @@ function changeBackgroundForSlot(slot) {
                     }
                     oldTextureToDispose.dispose();
                 }
-
+                
                 console.log(`Triple Mode: Replaced media in slot ${slot} with video ${nextMediaInfo.name}. Slots now: [${tripleImageIndices[0]}, ${tripleImageIndices[1]}, ${tripleImageIndices[2]}]`);
-
+                
                 // Revoke the object URL for the loaded video after it's used
                 // Note: For videos, we might not revoke immediately as it's still playing
                 // The URL will be revoked in the 'ended' event listener or on error
-
+                
             }, { once: true });
-
+            
             // Add error listener
             videoElement.addEventListener("error", function onVideoError(e) {
                 console.error(`Error loading video for slot ${slot}:`, e);
@@ -791,25 +814,25 @@ function changeBackgroundForSlot(slot) {
                 // Dispose video element
                 disposeVideoElement(videoElement);
                 // Increment index and try next media
-                // currentImageIndex++;
+                currentImageIndex++;
                 // Add a small delay before retrying
                 setTimeout(() => {
                     changeBackgroundForSlot(slot);
                 }, 1000);
             }, { once: true });
-
+            
         } catch (error) {
             console.error(`Error creating video element for slot ${slot}:`, error);
             // Revoke object URL on error
             if (nextMediaInfo.isFile) URL.revokeObjectURL(nextMediaInfo.source);
             // Increment index and try next media
-            // currentImageIndex++;
+            currentImageIndex++;
             // Add a small delay before retrying
             setTimeout(() => {
                 changeBackgroundForSlot(slot);
             }, 1000);
         }
-
+        
     } else {
         // Handle image (existing logic)
         // 加载下一张图片
@@ -822,7 +845,7 @@ function changeBackgroundForSlot(slot) {
                 if (nextMediaInfo.isFile) URL.revokeObjectURL(nextMediaInfo.source);
                 return;
             }
-
+            
             // 根据 slot 决定替换哪张贴图
             let oldTextureToDispose = null;
             switch (slot) {
@@ -845,41 +868,41 @@ function changeBackgroundForSlot(slot) {
                     tripleImageIndices[2] = nextMediaIndex; // 更新索引记录
                     break;
             }
-
+            
             // 清理被替换的旧纹理
             if (oldTextureToDispose) {
                 oldTextureToDispose.dispose();
             }
-
+            
             console.log(`Triple Mode: Replaced media in slot ${slot} with image ${nextMediaInfo.name}. Slots now: [${tripleImageIndices[0]}, ${tripleImageIndices[1]}, ${tripleImageIndices[2]}]`);
-
+            
             // Revoke the object URL for the loaded image after it's used
             if (nextMediaInfo.isFile) URL.revokeObjectURL(nextMediaInfo.source);
-
+            
         }, undefined, function(error) {
             console.error(`Error loading texture for slot ${slot} in triple mode:`, error);
             // Revoke object URL on error
             if (nextMediaInfo.isFile) URL.revokeObjectURL(nextMediaInfo.source);
             // Try next media
-            // currentImageIndex++;
+            currentImageIndex++;
             // Add a small delay before retrying
             setTimeout(() => {
                 changeBackgroundForSlot(slot);
             }, 1000);
         });
     }
-
+    
     // 更新 currentImageIndex，准备下下一张图片（对于视频，实际切换在 'ended' 事件中处理）
     // For images, increment now. For videos, it's handled in the 'ended' callback.
     // To simplify, we always increment here, and the 'ended' callback will just call the function again.
     // This ensures that if a video fails to load, the next item is still fetched.
     if (!nextMediaInfo.isVideo) {
-        // currentImageIndex++;
+        currentImageIndex++;
     } else {
         // For video, we increment after it ends or fails
         // This is handled in the event listeners
     }
-
+    
     // 再次检查是否需要重新打乱（在加载完成后）
     if (currentImageIndex >= backgroundImages.length) {
         console.log("Triple Mode: All images shown during single replacement cycle, reshuffling indices.");
@@ -892,10 +915,78 @@ function changeBackgroundForSlot(slot) {
 // --- 修改结束 ---
 
 // --- 新增：播放下一个背景视频的函数 ---
-// 注意：这个函数现在主要用于兼容旧的视频处理逻辑，新的文件夹模式会统一处理图片和视频
 function changeBackgroundToNextVideo() {
-  // 不再使用独立的视频处理逻辑，统一在changeBackgroundForSlot中处理
-  console.warn("changeBackgroundToNextVideo is deprecated. Use changeBackgroundForSlot instead.");
+  if (!isFolderMode || !isVideoFolderMode || backgroundVideos.length === 0) { // 如果不是文件夹模式、不是视频模式或者没有视频，则不执行
+    return;
+  }
+
+  // 获取下一个视频索引
+  const videoIndex = videoIndices[currentVideoIndex];
+  const videoFile = backgroundVideos[videoIndex];
+  console.log(`Changing background to video: ${videoFile.name} (index: ${videoIndex}, position: ${currentVideoIndex + 1}/${backgroundVideos.length})`);
+
+  // 清理之前的视频元素
+  if (currentVideoElement) {
+    disposeVideoElement(currentVideoElement);
+  }
+
+  // 清理旧纹理
+  material.uniforms.u_tex0.value?.dispose();
+
+  // 创建新的视频元素
+  currentVideoElement = createVideoElement(URL.createObjectURL(videoFile), isVideoLoop);
+
+  // 添加播放结束事件监听器
+  currentVideoElement.addEventListener('ended', function() {
+    console.log('Video ended, switching to next video');
+
+    // 更新索引，如果已遍历完所有视频，则重新打乱索引数组
+    currentVideoIndex++;
+    if (currentVideoIndex >= backgroundVideos.length) {
+      console.log("All videos have been shown, reshuffling indices for next round");
+      initializeAndShuffleIndices(videoIndices, backgroundVideos.length);
+      currentVideoIndex = 0;
+    }
+
+    // 为视频模式设置下一次切换的定时器 (也使用随机间隔)
+    scheduleNextVideoChange();
+  });
+
+  // --- 修改：为下一次视频切换设置定时器 (用于非循环播放或手动切换) ---
+  function scheduleNextVideoChange() {
+    // 清除之前的定时器
+    if (videoChangeTimer) {
+      clearTimeout(videoChangeTimer);
+      videoChangeTimer = null;
+    }
+
+    // 计算随机间隔时间 (slideShowInterval 到 slideShowInterval * 2 之间)
+    const randomInterval = (slideShowInterval + Math.random() * slideShowInterval) * 1000;
+    console.log(`Scheduling next video change in ${randomInterval / 1000} seconds.`);
+
+    // 设置新的定时器
+    videoChangeTimer = setTimeout(() => {
+        changeBackgroundToNextVideo();
+    }, randomInterval);
+  }
+  // --- 修改结束 ---
+
+  // 创建视频纹理
+  let videoTexture = new THREE.VideoTexture(currentVideoElement);
+  currentVideoElement.addEventListener(
+    "loadedmetadata",
+    function (e) {
+      material.uniforms.u_tex0_resolution.value = new THREE.Vector2(
+        videoTexture.image.videoWidth,
+        videoTexture.image.videoHeight
+      );
+    },
+    false
+  );
+  material.uniforms.u_tex0.value = videoTexture;
+
+  // 立即为视频设置第一个定时器
+  scheduleNextVideoChange();
 }
 // --- 新增结束 ---
 
