@@ -138,7 +138,7 @@ async function init() {
 // --- 新增：处理文件夹选择 ---
 document.getElementById("folderPicker").addEventListener("change", function (event) {
   if (event.target.files.length === 0) return;
-  
+
   // Convert FileList to Array and pass to processFolderPaths
   const files = Array.from(event.target.files);
   // 筛选出图片文件和视频文件
@@ -160,7 +160,7 @@ document.getElementById("folderPicker").addEventListener("change", function (eve
       disposeVideoElement(currentVideoElement);
       currentVideoElement = null;
     }
-    
+
     // Reset triple image mode specific variables
     isTripleImageMode = false;
     tripleImageIndices = [0, 1, 2];
@@ -319,8 +319,10 @@ function livelyPropertyListener(name, val) {
       slideShowInterval = val;
       // 如果当前正在运行幻灯片，重新设置定时器
       if (isFolderMode && backgroundChangeIntervalId) {
-        clearInterval(backgroundChangeIntervalId);
-        backgroundChangeIntervalId = setInterval(changeBackgroundToRandomImage, slideShowInterval * 1000);
+        changeBackgroundToNextImage();
+        // Set up the timer for slideshow
+        backgroundChangeIntervalId = setInterval(changeBackgroundToNextImage, slideShowInterval * 1000);
+        resolve();
       }
       break;
     case "rainEnabled":
@@ -393,7 +395,7 @@ function datUI() {
 
   // Add Triple Image Mode toggle (for manual override, though it's auto-managed)
   bg.add(material.uniforms.u_triple_image_mode, "value").name("Triple Image Mode").listen();
-  
+
   // Update the initial value of u_triple_image_mode based on the number of images
   // This will be overridden when a folder is selected, but good for initial state
   if (backgroundImages && backgroundImages.length >= 3) {
@@ -415,8 +417,12 @@ function datUI() {
       slideShowInterval = val;
       // 如果当前正在运行幻灯片，重新设置定时器
       if (isFolderMode && backgroundChangeIntervalId) {
-        clearInterval(backgroundChangeIntervalId);
-        backgroundChangeIntervalId = setInterval(changeBackgroundToRandomImage, slideShowInterval * 1000);
+        // clearInterval(backgroundChangeIntervalId);
+        // backgroundChangeIntervalId = setInterval(changeBackgroundToRandomImage, slideShowInterval * 1000);
+        changeBackgroundToNextImage();
+        // Set up the timer for slideshow
+        backgroundChangeIntervalId = setInterval(changeBackgroundToNextImage, slideShowInterval * 1000);
+        resolve();
       }
       // 通知Lively属性变更
       if (typeof livelyPropertyListener === 'function') {
@@ -623,14 +629,14 @@ function changeBackgroundToNextImage() {
 
   if (isTripleImageMode) {
     // 三图模式逻辑 (首次加载三张，之后每次替换一张)
-    
+
     // 检查是否是首次加载（通过 nextTripleImageSlot 是否为 0 且 textures are not set）
-    const isFirstLoad = nextTripleImageSlot === 0 && 
+    const isFirstLoad = nextTripleImageSlot === 0 &&
                         (!material.uniforms.u_tex0.value || !material.uniforms.u_tex1.value || !material.uniforms.u_tex2.value);
 
     if (isFirstLoad) {
         console.log(`Triple Mode: Initial load of first three images.`);
-        
+
         // 获取前三个图片的索引
         const index0 = imageIndices[0];
         const index1 = imageIndices[1];
@@ -683,12 +689,12 @@ function changeBackgroundToNextImage() {
             material.uniforms.u_tex0_resolution.value = new THREE.Vector2(tex0.image.width, tex0.image.height);
             material.uniforms.u_tex1_resolution.value = new THREE.Vector2(tex1.image.width, tex1.image.height);
             material.uniforms.u_tex2_resolution.value = new THREE.Vector2(tex2.image.width, tex2.image.height);
-            
+
             // 确保三图模式开启
             material.uniforms.u_triple_image_mode.value = true;
-            
+
             console.log(`Triple Mode: Initial load complete. Displaying images ${imageInfo0.name}, ${imageInfo1.name}, ${imageInfo2.name}`);
-            
+
             // Revoke object URLs after successful load and use
             if (imageInfo0.isFile) URL.revokeObjectURL(imageInfo0.source);
             if (imageInfo1.isFile) URL.revokeObjectURL(imageInfo1.source);
@@ -701,24 +707,24 @@ function changeBackgroundToNextImage() {
             if (imageInfo1.isFile) URL.revokeObjectURL(imageInfo1.source);
             if (imageInfo2.isFile) URL.revokeObjectURL(imageInfo2.source);
           });
-          
+
         // 更新状态，准备下一次单张替换
         currentImageIndex = 3; // Next image to load
         nextTripleImageSlot = 0; // Will replace the first slot next
-        
+
         return; // 首次加载完成，退出函数
     }
-    
+
     // --- 后续单张替换逻辑 ---
     console.log(`Triple Mode: Replacing image in slot ${nextTripleImageSlot}`);
-    
+
     // 检查是否需要重新打乱索引（当 currentImageIndex 超出范围时）
     if (currentImageIndex >= backgroundImages.length) {
         console.log("Triple Mode: All images shown, reshuffling indices.");
         initializeAndShuffleIndices(imageIndices, backgroundImages.length);
         currentImageIndex = 0;
     }
-    
+
     // 获取下一张要加载的图片索引和文件
     const nextImageIndex = imageIndices[currentImageIndex];
     const nextImageInfo = getImageSourceAndName(nextImageIndex);
@@ -726,7 +732,7 @@ function changeBackgroundToNextImage() {
 
     // 加载下一张图片
     new THREE.TextureLoader().load(nextImageInfo.source, function (newTexture) {
-    
+
         // 如果正在过渡，则跳过本次切换
         if (fadeTransition && fadeTransition.isTransitioning) {
             console.log("Transition in progress, skipping single image replacement.");
@@ -735,7 +741,7 @@ function changeBackgroundToNextImage() {
             if (nextImageInfo.isFile) URL.revokeObjectURL(nextImageInfo.source);
             return;
         }
-        
+
         // 根据 nextTripleImageSlot 决定替换哪张贴图
         let oldTextureToDispose = null;
         let oldTextureSlotIndex = -1;
@@ -762,26 +768,26 @@ function changeBackgroundToNextImage() {
                 oldTextureSlotIndex = 2;
                 break;
         }
-        
+
         // 清理被替换的旧纹理
         if (oldTextureToDispose) {
             oldTextureToDispose.dispose();
         }
-        
+
         console.log(`Triple Mode: Replaced image in slot ${nextTripleImageSlot} with image ${nextImageInfo.name}. Slots now: [${tripleImageIndices[0]}, ${tripleImageIndices[1]}, ${tripleImageIndices[2]}]`);
-        
+
         // 更新下一个要替换的槽位 (0 -> 1 -> 2 -> 0 ...)
         nextTripleImageSlot = (nextTripleImageSlot + 1) % 3;
-        
+
         // Revoke the object URL for the loaded image after it's used
         if (nextImageInfo.isFile) URL.revokeObjectURL(nextImageInfo.source);
-        
+
     }, undefined, function(error) {
         console.error("Error loading texture for single replacement in triple mode:", error);
         // Revoke object URL on error
         if (nextImageInfo.isFile) URL.revokeObjectURL(nextImageInfo.source);
     });
-    
+
     // 更新 currentImageIndex，准备下下一张图片
     currentImageIndex++;
     // 再次检查是否需要重新打乱（在加载完成后）
@@ -821,7 +827,7 @@ function changeBackgroundToNextImage() {
         // 确保三图模式关闭
         material.uniforms.u_triple_image_mode.value = false;
       }
-      
+
       // Revoke the object URL for the loaded image after it's used or transition starts
       if (imageInfo.isFile) URL.revokeObjectURL(imageInfo.source);
     }, undefined, function(error) {

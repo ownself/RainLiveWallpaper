@@ -18,7 +18,7 @@
     "min": 0,
     "text": "Brightness",
     "type": "slider",
-    "value": 75
+    "value": 100
   },
   "rainNormal": {
     "max": 100,
@@ -36,7 +36,7 @@
   },
   "rainEnabled": {
     "type": "checkbox",
-    "value": true,
+    "value": false,
     "text": "Enable Rain"
   },
   "mediaSelect": {
@@ -51,17 +51,17 @@
     "min": 5,
     "text": "Slide Show Interval (seconds)",
     "type": "slider",
-    "value": 60
+    "value": 10
   },
   "mediaScaling": {
     "type": "dropdown",
     "value": 0,
-    "text": "Scaling",
+    "text": "Stretch",
     "items": ["Stretch", "Fill"]
   },
   "blurQuality": {
     "type": "dropdown",
-    "value": 1,
+    "value": 0,
     "text": "Blur Quality",
     "items": ["Off", "Low", "High", "Very High"]
   },
@@ -70,14 +70,14 @@
     "min": 0,
     "text": "Blur Intensity",
     "type": "slider",
-    "value": 50
+    "value": 0
   },
   "parallaxIntensity": {
     "max": 5,
     "min": 0,
     "text": "Parallax",
     "type": "slider",
-    "value": 1
+    "value": 0
   },
   "displayScaling": {
     "max": 2,
@@ -94,7 +94,7 @@
   },
   "postProcessingChk": {
     "type": "checkbox",
-    "value": true,
+    "value": false,
     "text": "Post Processing"
   },
   "lightningChk": {
