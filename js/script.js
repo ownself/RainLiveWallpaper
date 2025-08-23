@@ -668,7 +668,7 @@ function scheduleImageChangeForSlot(slot) {
     const timerId = setTimeout(() => {
         changeBackgroundForSlot(slot);
         // 递归调用以设置下一次定时器
-        scheduleImageChangeForSlot(slot);
+        // scheduleImageChangeForSlot(slot);
     }, randomInterval);
 
     // 存储定时器ID
@@ -850,6 +850,8 @@ function changeBackgroundForSlot(slot) {
             if (oldTextureToDispose) {
                 oldTextureToDispose.dispose();
             }
+
+            scheduleImageChangeForSlot(slot); // 重新安排该槽位的下一次更换
 
             console.log(`Triple Mode: Replaced media in slot ${slot} with image ${nextMediaInfo.name}. Slots now: [${tripleImageIndices[0]}, ${tripleImageIndices[1]}, ${tripleImageIndices[2]}]`);
 
