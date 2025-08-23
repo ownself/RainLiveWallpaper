@@ -166,21 +166,7 @@ function loadInitialTripleImages() {
         const tex1 = result1 instanceof THREE.Texture ? result1 : result1.texture;
         const tex2 = result2 instanceof THREE.Texture ? result2 : result2.texture;
         
-        // 如果正在过渡，则跳过本次切换
-        if (fadeTransition && fadeTransition.isTransitioning) {
-          console.log("Transition in progress, skipping initial triple media load.");
-          // 清理刚刚加载的纹理
-          tex0.dispose();
-          tex1.dispose();
-          tex2.dispose();
-          // Revoke object URLs if they were created
-          if (mediaInfo0.isFile) URL.revokeObjectURL(mediaInfo0.source);
-          if (mediaInfo1.isFile) URL.revokeObjectURL(mediaInfo1.source);
-          if (mediaInfo2.isFile) URL.revokeObjectURL(mediaInfo2.source);
-          return;
-        }
-        
-        // 直接设置纹理（简化处理，实际应用中可能需要更复杂的过渡）
+        // 直接设置纹理
         disposeVideoElement(videoElement); // 如果之前有视频，先清理
         material.uniforms.u_tex0.value?.dispose();
         material.uniforms.u_tex1.value?.dispose();
@@ -457,14 +443,6 @@ function changeBackgroundForSlot(slot) {
         // Handle image (existing logic but with clearer timer management)
         new THREE.TextureLoader().load(nextMediaInfo.source, function (newTexture) {
             console.log(`[DEBUG] Slot ${slot} - Image loaded: ${nextMediaInfo.name}`);
-            // 如果正在过渡，则跳过本次切换
-            if (fadeTransition && fadeTransition.isTransitioning) {
-                console.log(`Transition in progress, skipping image change for slot ${slot}.`);
-                newTexture.dispose(); // 清理刚刚加载的纹理
-                // Revoke object URL on skip
-                if (nextMediaInfo.isFile) URL.revokeObjectURL(nextMediaInfo.source);
-                return;
-            }
             
             // 根据 slot 决定替换哪张贴图
             let oldTextureToDispose = null;

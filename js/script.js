@@ -27,9 +27,7 @@ let settings = { fps: 30, scale: 1.0, parallaxVal: 0 };
 let slideShowInterval = 4; // 幻灯片间隔时间（秒）
 let videoElement;
 
-// --- 过渡效果 ---
-let fadeTransition; // 淡入淡出过渡效果实例
-// --- 过渡效果结束 ---
+
 
 //custom events
 const sceneLoadedEvent = new Event("sceneLoaded");
@@ -135,9 +133,6 @@ async function init() {
   window.addEventListener("resize", (e) => resize());
   render();
   datUI();
-
-  // 初始化过渡效果
-  fadeTransition = new FadeTransition(scene, camera, renderer, material);
 
   document.dispatchEvent(sceneLoadedEvent);
 }

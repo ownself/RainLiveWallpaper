@@ -146,29 +146,15 @@ function changeBackgroundToNextImage() {
     // 处理图片
     // 加载纹理
     new THREE.TextureLoader().load(mediaInfo.source, function (tex) {
-      // 如果正在过渡，则跳过本次切换
-      if (fadeTransition && fadeTransition.isTransitioning) {
-        console.log("Transition in progress, skipping image change.");
-        tex.dispose(); // 清理刚刚加载的纹理
-        // 跳过时撤销对象 URL
-        if (mediaInfo.isFile) URL.revokeObjectURL(mediaInfo.source);
-        return;
-      }
+      // 直接切换
+      disposeVideoElement(videoElement); // 如果之前有视频，先清理
+      material.uniforms.u_tex0.value?.dispose(); // 清理旧纹理
+      material.uniforms.u_tex0.value = tex;
+      material.uniforms.u_tex0_resolution.value = new THREE.Vector2(tex.image.width, tex.image.height);
+      // 确保三图模式关闭
+      material.uniforms.u_triple_image_mode.value = false;
 
-      // 启动淡入淡出过渡效果
-      if (fadeTransition) {
-        fadeTransition.startTransition(tex, new THREE.Vector2(tex.image.width, tex.image.height));
-      } else {
-        // 如果没有过渡效果实例，则直接切换
-        disposeVideoElement(videoElement); // 如果之前有视频，先清理
-        material.uniforms.u_tex0.value?.dispose(); // 清理旧纹理
-        material.uniforms.u_tex0.value = tex;
-        material.uniforms.u_tex0_resolution.value = new THREE.Vector2(tex.image.width, tex.image.height);
-        // 确保三图模式关闭
-        material.uniforms.u_triple_image_mode.value = false;
-      }
-
-      // 使用后或过渡开始后撤销对象 URL
+      // 使用后撤销对象 URL
       if (mediaInfo.isFile) URL.revokeObjectURL(mediaInfo.source);
       
       // 为单图模式设置下一次切换的定时器
