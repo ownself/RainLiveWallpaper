@@ -8,8 +8,8 @@ let devicePixelRatio = window.devicePixelRatio || 1;
 // --- 新增变量 ---
 let backgroundImages = []; // 存储从文件夹读取的图片文件对象
 let backgroundVideos = []; // 存储从文件夹读取的视频文件对象
-let backgroundChangeIntervalId = null; // 存储定时器ID
-let isFolderMode = false; // 标记是否处于文件夹轮播模式
+// let backgroundChangeIntervalId = null; // 存储定时器ID (已移除)
+let isFolderMode = false; // 标记是否处于文件夹模式
 let isVideoFolderMode = false; // 标记是否处于视频文件夹模式
 let isVideoLoop = true;
 let currentVideoElement = null; // 当前播放的视频元素
@@ -23,11 +23,16 @@ let currentVideoIndex = 0; // 当前视频索引位置
 let isTripleImageMode = false; // 标记是否处于三图模式 (基于图片数量)
 let tripleImageIndices = [0, 1, 2]; // 当前在屏幕上显示的三张图片的索引 (相对于imageIndices)
 let nextTripleImageSlot = 0; // 下一个要替换的图片槽位 (0, 1, 2)
+
+// --- 新增：用于独立定时器管理 ---
+let imageChangeTimers = {}; // 存储每个图片槽位的定时器ID {0: id, 1: id, 2: id}
+let videoChangeTimer = null;   // 存储视频切换的定时器ID
+// --- 新增结束 ---
 // --- 新增结束 ---
 
 let scene, camera, renderer, material;
 let settings = { fps: 30, scale: 1.0, parallaxVal: 0 };
-let slideShowInterval = 10; // 幻灯片间隔时间（秒）
+let slideShowInterval = 4; // 幻灯片间隔时间（秒）
 let videoElement;
 
 // --- 过渡效果 ---
@@ -318,11 +323,27 @@ function livelyPropertyListener(name, val) {
     case "slideShowInterval":
       slideShowInterval = val;
       // 如果当前正在运行幻灯片，重新设置定时器
-      if (isFolderMode && backgroundChangeIntervalId) {
-        changeBackgroundToNextImage();
-        // Set up the timer for slideshow
-        backgroundChangeIntervalId = setInterval(changeBackgroundToNextImage, slideShowInterval * 1000);
-        resolve();
+      if (isFolderMode) {
+        // 清除所有图片定时器
+        Object.values(imageChangeTimers).forEach(id => clearTimeout(id));
+        imageChangeTimers = {};
+        // 清除视频定时器
+        if (videoChangeTimer) {
+            clearTimeout(videoChangeTimer);
+            videoChangeTimer = null;
+        }
+        // 立即切换到下一张图片/视频 或 重新设置独立定时器
+        if (isVideoFolderMode) {
+            changeBackgroundToNextVideo();
+        } else {
+            if (isTripleImageMode) {
+                // 重新设置独立定时器
+                setupIndependentImageTimers();
+            } else {
+                // 对于单图模式，立即切换并设置新的定时器
+                changeBackgroundToNextImage();
+            }
+        }
       }
       break;
     case "rainEnabled":
@@ -416,13 +437,27 @@ function datUI() {
     .onChange(function (val) {
       slideShowInterval = val;
       // 如果当前正在运行幻灯片，重新设置定时器
-      if (isFolderMode && backgroundChangeIntervalId) {
-        // clearInterval(backgroundChangeIntervalId);
-        // backgroundChangeIntervalId = setInterval(changeBackgroundToRandomImage, slideShowInterval * 1000);
-        changeBackgroundToNextImage();
-        // Set up the timer for slideshow
-        backgroundChangeIntervalId = setInterval(changeBackgroundToNextImage, slideShowInterval * 1000);
-        resolve();
+      if (isFolderMode) {
+        // 清除所有图片定时器
+        Object.values(imageChangeTimers).forEach(id => clearTimeout(id));
+        imageChangeTimers = {};
+        // 清除视频定时器
+        if (videoChangeTimer) {
+            clearTimeout(videoChangeTimer);
+            videoChangeTimer = null;
+        }
+        // 立即切换到下一张图片/视频 或 重新设置独立定时器
+        if (isVideoFolderMode) {
+            changeBackgroundToNextVideo();
+        } else {
+            if (isTripleImageMode) {
+                // 重新设置独立定时器
+                setupIndependentImageTimers();
+            } else {
+                // 对于单图模式，立即切换并设置新的定时器
+                changeBackgroundToNextImage();
+            }
+        }
       }
       // 通知Lively属性变更
       if (typeof livelyPropertyListener === 'function') {
@@ -547,9 +582,13 @@ async function processFolderPaths(imageUrls) {
   // Clear previous state
   backgroundImages = [];
   backgroundVideos = [];
-  if (backgroundChangeIntervalId) {
-    clearInterval(backgroundChangeIntervalId);
-    backgroundChangeIntervalId = null;
+  // 清除所有图片定时器
+  Object.values(imageChangeTimers).forEach(id => clearTimeout(id));
+  imageChangeTimers = {};
+  // 清除视频定时器
+  if (videoChangeTimer) {
+    clearTimeout(videoChangeTimer);
+    videoChangeTimer = null;
   }
   if (currentVideoElement) {
     disposeVideoElement(currentVideoElement);
@@ -588,9 +627,11 @@ async function processFolderPaths(imageUrls) {
   // Return a promise that resolves when the first image(s) are loaded
   return new Promise((resolve) => {
     const loadFirstImages = () => {
-      changeBackgroundToNextImage();
-      // Set up the timer for slideshow
-      backgroundChangeIntervalId = setInterval(changeBackgroundToNextImage, slideShowInterval * 1000);
+      if (isTripleImageMode) {
+          loadInitialTripleImages();
+      } else {
+          changeBackgroundToNextImage(); // For single image mode
+      }
       resolve();
     };
 
@@ -608,8 +649,9 @@ async function processFolderPaths(imageUrls) {
 // --- 新增结束 ---
 
 // --- 修改：更换到下一个背景图片的函数，支持 File 对象和 URL 字符串 ---
+// --- 修改为：仅用于单图模式 ---
 function changeBackgroundToNextImage() {
-  if (!isFolderMode || isVideoFolderMode || backgroundImages.length === 0) { // 如果不是文件夹模式、是视频模式或者没有图片，则不执行
+  if (!isFolderMode || isVideoFolderMode || backgroundImages.length === 0 || isTripleImageMode) { // 如果不是文件夹模式、是视频模式、没有图片或处于三图模式，则不执行
     return;
   }
 
@@ -627,223 +669,74 @@ function changeBackgroundToNextImage() {
     return { source: null, name: 'unknown', isFile: false };
   }
 
-  if (isTripleImageMode) {
-    // 三图模式逻辑 (首次加载三张，之后每次替换一张)
+  // 单图模式逻辑（保持原有逻辑，但适配 File/URL）
+  // 获取下一个图片索引
+  const imageIndex = imageIndices[currentImageIndex];
+  const imageInfo = getImageSourceAndName(imageIndex);
+  console.log(`Single Mode: Changing background to: ${imageInfo.name} (index: ${imageIndex}, position: ${currentImageIndex + 1}/${backgroundImages.length})`);
 
-    // 检查是否是首次加载（通过 nextTripleImageSlot 是否为 0 且 textures are not set）
-    const isFirstLoad = nextTripleImageSlot === 0 &&
-                        (!material.uniforms.u_tex0.value || !material.uniforms.u_tex1.value || !material.uniforms.u_tex2.value);
-
-    if (isFirstLoad) {
-        console.log(`Triple Mode: Initial load of first three images.`);
-
-        // 获取前三个图片的索引
-        const index0 = imageIndices[0];
-        const index1 = imageIndices[1];
-        const index2 = imageIndices[2];
-        const imageInfo0 = getImageSourceAndName(index0);
-        const imageInfo1 = getImageSourceAndName(index1);
-        const imageInfo2 = getImageSourceAndName(index2);
-
-        // 创建一个Promise数组来并行加载三张图片
-        const texturePromises = [
-          new Promise((resolve, reject) => {
-            new THREE.TextureLoader().load(imageInfo0.source, resolve, undefined, reject);
-          }),
-          new Promise((resolve, reject) => {
-            new THREE.TextureLoader().load(imageInfo1.source, resolve, undefined, reject);
-          }),
-          new Promise((resolve, reject) => {
-            new THREE.TextureLoader().load(imageInfo2.source, resolve, undefined, reject);
-          })
-        ];
-
-        // 等待所有纹理加载完成
-        Promise.all(texturePromises)
-          .then(textures => {
-            const [tex0, tex1, tex2] = textures;
-
-            // 如果正在过渡，则跳过本次切换
-            if (fadeTransition && fadeTransition.isTransitioning) {
-              console.log("Transition in progress, skipping initial triple image load.");
-              // 清理刚刚加载的纹理
-              tex0.dispose();
-              tex1.dispose();
-              tex2.dispose();
-              // Revoke object URLs if they were created
-              if (imageInfo0.isFile) URL.revokeObjectURL(imageInfo0.source);
-              if (imageInfo1.isFile) URL.revokeObjectURL(imageInfo1.source);
-              if (imageInfo2.isFile) URL.revokeObjectURL(imageInfo2.source);
-              return;
-            }
-
-            // 直接设置纹理（简化处理，实际应用中可能需要更复杂的过渡）
-            disposeVideoElement(videoElement); // 如果之前有视频，先清理
-            material.uniforms.u_tex0.value?.dispose();
-            material.uniforms.u_tex1.value?.dispose();
-            material.uniforms.u_tex2.value?.dispose();
-
-            material.uniforms.u_tex0.value = tex0;
-            material.uniforms.u_tex1.value = tex1;
-            material.uniforms.u_tex2.value = tex2;
-            material.uniforms.u_tex0_resolution.value = new THREE.Vector2(tex0.image.width, tex0.image.height);
-            material.uniforms.u_tex1_resolution.value = new THREE.Vector2(tex1.image.width, tex1.image.height);
-            material.uniforms.u_tex2_resolution.value = new THREE.Vector2(tex2.image.width, tex2.image.height);
-
-            // 确保三图模式开启
-            material.uniforms.u_triple_image_mode.value = true;
-
-            console.log(`Triple Mode: Initial load complete. Displaying images ${imageInfo0.name}, ${imageInfo1.name}, ${imageInfo2.name}`);
-
-            // Revoke object URLs after successful load and use
-            if (imageInfo0.isFile) URL.revokeObjectURL(imageInfo0.source);
-            if (imageInfo1.isFile) URL.revokeObjectURL(imageInfo1.source);
-            if (imageInfo2.isFile) URL.revokeObjectURL(imageInfo2.source);
-          })
-          .catch(error => {
-            console.error("Error loading initial textures for triple mode:", error);
-            // Revoke object URLs on error
-            if (imageInfo0.isFile) URL.revokeObjectURL(imageInfo0.source);
-            if (imageInfo1.isFile) URL.revokeObjectURL(imageInfo1.source);
-            if (imageInfo2.isFile) URL.revokeObjectURL(imageInfo2.source);
-          });
-
-        // 更新状态，准备下一次单张替换
-        currentImageIndex = 3; // Next image to load
-        nextTripleImageSlot = 0; // Will replace the first slot next
-
-        return; // 首次加载完成，退出函数
-    }
-
-    // --- 后续单张替换逻辑 ---
-    console.log(`Triple Mode: Replacing image in slot ${nextTripleImageSlot}`);
-
-    // 检查是否需要重新打乱索引（当 currentImageIndex 超出范围时）
-    if (currentImageIndex >= backgroundImages.length) {
-        console.log("Triple Mode: All images shown, reshuffling indices.");
-        initializeAndShuffleIndices(imageIndices, backgroundImages.length);
-        currentImageIndex = 0;
-    }
-
-    // 获取下一张要加载的图片索引和文件
-    const nextImageIndex = imageIndices[currentImageIndex];
-    const nextImageInfo = getImageSourceAndName(nextImageIndex);
-    console.log(`Triple Mode: Loading next image: ${nextImageInfo.name} (index: ${nextImageIndex})`);
-
-    // 加载下一张图片
-    new THREE.TextureLoader().load(nextImageInfo.source, function (newTexture) {
-
-        // 如果正在过渡，则跳过本次切换
-        if (fadeTransition && fadeTransition.isTransitioning) {
-            console.log("Transition in progress, skipping single image replacement.");
-            newTexture.dispose();
-            // Revoke object URL on skip
-            if (nextImageInfo.isFile) URL.revokeObjectURL(nextImageInfo.source);
-            return;
-        }
-
-        // 根据 nextTripleImageSlot 决定替换哪张贴图
-        let oldTextureToDispose = null;
-        let oldTextureSlotIndex = -1;
-        switch (nextTripleImageSlot) {
-            case 0:
-                oldTextureToDispose = material.uniforms.u_tex0.value;
-                material.uniforms.u_tex0.value = newTexture;
-                material.uniforms.u_tex0_resolution.value = new THREE.Vector2(newTexture.image.width, newTexture.image.height);
-                tripleImageIndices[0] = nextImageIndex; // 更新索引记录
-                oldTextureSlotIndex = 0;
-                break;
-            case 1:
-                oldTextureToDispose = material.uniforms.u_tex1.value;
-                material.uniforms.u_tex1.value = newTexture;
-                material.uniforms.u_tex1_resolution.value = new THREE.Vector2(newTexture.image.width, newTexture.image.height);
-                tripleImageIndices[1] = nextImageIndex; // 更新索引记录
-                oldTextureSlotIndex = 1;
-                break;
-            case 2:
-                oldTextureToDispose = material.uniforms.u_tex2.value;
-                material.uniforms.u_tex2.value = newTexture;
-                material.uniforms.u_tex2_resolution.value = new THREE.Vector2(newTexture.image.width, newTexture.image.height);
-                tripleImageIndices[2] = nextImageIndex; // 更新索引记录
-                oldTextureSlotIndex = 2;
-                break;
-        }
-
-        // 清理被替换的旧纹理
-        if (oldTextureToDispose) {
-            oldTextureToDispose.dispose();
-        }
-
-        console.log(`Triple Mode: Replaced image in slot ${nextTripleImageSlot} with image ${nextImageInfo.name}. Slots now: [${tripleImageIndices[0]}, ${tripleImageIndices[1]}, ${tripleImageIndices[2]}]`);
-
-        // 更新下一个要替换的槽位 (0 -> 1 -> 2 -> 0 ...)
-        nextTripleImageSlot = (nextTripleImageSlot + 1) % 3;
-
-        // Revoke the object URL for the loaded image after it's used
-        if (nextImageInfo.isFile) URL.revokeObjectURL(nextImageInfo.source);
-
-    }, undefined, function(error) {
-        console.error("Error loading texture for single replacement in triple mode:", error);
-        // Revoke object URL on error
-        if (nextImageInfo.isFile) URL.revokeObjectURL(nextImageInfo.source);
-    });
-
-    // 更新 currentImageIndex，准备下下一张图片
-    currentImageIndex++;
-    // 再次检查是否需要重新打乱（在加载完成后）
-    if (currentImageIndex >= backgroundImages.length) {
-        console.log("Triple Mode: All images shown during single replacement cycle, reshuffling indices.");
-        initializeAndShuffleIndices(imageIndices, backgroundImages.length);
-        currentImageIndex = 0;
-    }
-
-  } else {
-    // 单图模式逻辑（保持原有逻辑，但适配 File/URL）
-    // 获取下一个图片索引
-    const imageIndex = imageIndices[currentImageIndex];
-    const imageInfo = getImageSourceAndName(imageIndex);
-    console.log(`Single Mode: Changing background to: ${imageInfo.name} (index: ${imageIndex}, position: ${currentImageIndex + 1}/${backgroundImages.length})`);
-
-    // 加载纹理
-    new THREE.TextureLoader().load(imageInfo.source, function (tex) {
-      // 如果正在过渡，则跳过本次切换
-      if (fadeTransition && fadeTransition.isTransitioning) {
-        console.log("Transition in progress, skipping image change.");
-        tex.dispose(); // 清理刚刚加载的纹理
-        // Revoke object URL on skip
-        if (imageInfo.isFile) URL.revokeObjectURL(imageInfo.source);
-        return;
-      }
-
-      // 启动淡入淡出过渡效果
-      if (fadeTransition) {
-        fadeTransition.startTransition(tex, new THREE.Vector2(tex.image.width, tex.image.height));
-      } else {
-        // 如果没有过渡效果实例，则直接切换
-        disposeVideoElement(videoElement); // 如果之前有视频，先清理
-        material.uniforms.u_tex0.value?.dispose(); // 清理旧纹理
-        material.uniforms.u_tex0.value = tex;
-        material.uniforms.u_tex0_resolution.value = new THREE.Vector2(tex.image.width, tex.image.height);
-        // 确保三图模式关闭
-        material.uniforms.u_triple_image_mode.value = false;
-      }
-
-      // Revoke the object URL for the loaded image after it's used or transition starts
+  // 加载纹理
+  new THREE.TextureLoader().load(imageInfo.source, function (tex) {
+    // 如果正在过渡，则跳过本次切换
+    if (fadeTransition && fadeTransition.isTransitioning) {
+      console.log("Transition in progress, skipping image change.");
+      tex.dispose(); // 清理刚刚加载的纹理
+      // Revoke object URL on skip
       if (imageInfo.isFile) URL.revokeObjectURL(imageInfo.source);
-    }, undefined, function(error) {
-        console.error("Error loading texture in single mode:", error);
-        // Revoke object URL on error
-        if (imageInfo.isFile) URL.revokeObjectURL(imageInfo.source);
-    });
-
-    // 更新索引，如果已遍历完所有图片，则重新打乱索引数组
-    currentImageIndex++;
-    if (currentImageIndex >= backgroundImages.length) {
-      console.log("Single Mode: All images have been shown, reshuffling indices for next round");
-      initializeAndShuffleIndices(imageIndices, backgroundImages.length);
-      currentImageIndex = 0;
+      return;
     }
+
+    // 启动淡入淡出过渡效果
+    if (fadeTransition) {
+      fadeTransition.startTransition(tex, new THREE.Vector2(tex.image.width, tex.image.height));
+    } else {
+      // 如果没有过渡效果实例，则直接切换
+      disposeVideoElement(videoElement); // 如果之前有视频，先清理
+      material.uniforms.u_tex0.value?.dispose(); // 清理旧纹理
+      material.uniforms.u_tex0.value = tex;
+      material.uniforms.u_tex0_resolution.value = new THREE.Vector2(tex.image.width, tex.image.height);
+      // 确保三图模式关闭
+      material.uniforms.u_triple_image_mode.value = false;
+    }
+
+    // Revoke the object URL for the loaded image after it's used or transition starts
+    if (imageInfo.isFile) URL.revokeObjectURL(imageInfo.source);
+
+    // 为单图模式设置下一次切换的定时器
+    scheduleNextImageChange();
+
+  }, undefined, function(error) {
+      console.error("Error loading texture in single mode:", error);
+      // Revoke object URL on error
+      if (imageInfo.isFile) URL.revokeObjectURL(imageInfo.source);
+  });
+
+  // 更新索引，如果已遍历完所有图片，则重新打乱索引数组
+  currentImageIndex++;
+  if (currentImageIndex >= backgroundImages.length) {
+    console.log("Single Mode: All images have been shown, reshuffling indices for next round");
+    initializeAndShuffleIndices(imageIndices, backgroundImages.length);
+    currentImageIndex = 0;
   }
+
+  // --- 新增：为下一次图片切换设置定时器 ---
+  function scheduleNextImageChange() {
+    // 清除之前的定时器
+    if (backgroundChangeIntervalId) {
+      clearTimeout(backgroundChangeIntervalId);
+      backgroundChangeIntervalId = null;
+    }
+
+    // 计算随机间隔时间 (slideShowInterval 到 slideShowInterval * 2 之间)
+    const randomInterval = (slideShowInterval + Math.random() * slideShowInterval) * 1000;
+    console.log(`Scheduling next image change in ${randomInterval / 1000} seconds.`);
+
+    // 设置新的定时器
+    backgroundChangeIntervalId = setTimeout(() => {
+        changeBackgroundToNextImage();
+    }, randomInterval);
+  }
+  // --- 新增结束 ---
 }
 // --- 修改结束 ---
 
@@ -881,8 +774,28 @@ function changeBackgroundToNextVideo() {
       currentVideoIndex = 0;
     }
 
-    changeBackgroundToNextVideo(); // 播放下一个视频
+    // 为视频模式设置下一次切换的定时器 (也使用随机间隔)
+    scheduleNextVideoChange();
   });
+
+  // --- 修改：为下一次视频切换设置定时器 (用于非循环播放或手动切换) ---
+  function scheduleNextVideoChange() {
+    // 清除之前的定时器
+    if (videoChangeTimer) {
+      clearTimeout(videoChangeTimer);
+      videoChangeTimer = null;
+    }
+
+    // 计算随机间隔时间 (slideShowInterval 到 slideShowInterval * 2 之间)
+    const randomInterval = (slideShowInterval + Math.random() * slideShowInterval) * 1000;
+    console.log(`Scheduling next video change in ${randomInterval / 1000} seconds.`);
+
+    // 设置新的定时器
+    videoChangeTimer = setTimeout(() => {
+        changeBackgroundToNextVideo();
+    }, randomInterval);
+  }
+  // --- 修改结束 ---
 
   // 创建视频纹理
   let videoTexture = new THREE.VideoTexture(currentVideoElement);
@@ -897,6 +810,9 @@ function changeBackgroundToNextVideo() {
     false
   );
   material.uniforms.u_tex0.value = videoTexture;
+
+  // 立即为视频设置第一个定时器
+  scheduleNextVideoChange();
 }
 // --- 新增结束 ---
 
