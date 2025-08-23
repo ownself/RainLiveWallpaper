@@ -82,8 +82,45 @@ async function init() {
   material.fragmentShader = await (await fetch("shaders/rain.frag")).text();
   resize();
 
-  material.uniforms.u_tex0_resolution.value = new THREE.Vector2(1920, 1080);
-  material.uniforms.u_tex0.value = await new THREE.TextureLoader().loadAsync("media/image.webp");
+  // --- 修改：尝试从 list.json 加载图片列表 ---
+  let autoLoaded = false;
+  try {
+    console.log("Attempting to load media list from ./media/list.json");
+    const response = await fetch('media/list.json');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const mediaFiles = await response.json();
+    console.log("Loaded media list:", mediaFiles);
+
+    if (Array.isArray(mediaFiles) && mediaFiles.length > 0) {
+      // Filter for image files (basic check)
+      const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'];
+      const imageUrls = mediaFiles.filter(file => {
+        const lowerFile = file.toLowerCase();
+        return imageExtensions.some(ext => lowerFile.endsWith(ext));
+      }).map(file => `media/${file}`); // Prepend 'media/' to form full relative path
+
+      if (imageUrls.length > 0) {
+        console.log("Auto-starting folder mode with images from list.json");
+        await processFolderPaths(imageUrls); // Prepend 'media/' to form full relative path
+        autoLoaded = true;
+      } else {
+        console.warn("No valid image files found in the list.json");
+      }
+    } else {
+      console.warn("media/list.json is empty or not an array");
+    }
+  } catch (error) {
+    console.log("Could not load media/list.json for auto folder mode, or list is empty/invalid:", error.message);
+  }
+
+  // 如果没有从 list.json 自动加载，则加载默认图片
+  if (!autoLoaded) {
+    material.uniforms.u_tex0_resolution.value = new THREE.Vector2(1920, 1080);
+    material.uniforms.u_tex0.value = await new THREE.TextureLoader().loadAsync("media/image.webp");
+  }
+  // --- 修改结束 ---
 
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2, 1, 1), material);
   scene.add(quad);
@@ -101,27 +138,8 @@ async function init() {
 // --- 新增：处理文件夹选择 ---
 document.getElementById("folderPicker").addEventListener("change", function (event) {
   if (event.target.files.length === 0) return;
-  // 清空之前的列表和定时器
-  backgroundImages = [];
-  backgroundVideos = [];
-  if (backgroundChangeIntervalId) {
-    clearInterval(backgroundChangeIntervalId);
-    backgroundChangeIntervalId = null;
-  }
-  // 清理当前视频元素
-  if (currentVideoElement) {
-    disposeVideoElement(currentVideoElement);
-    currentVideoElement = null;
-  }
   
-  // Reset triple image mode specific variables
-  isTripleImageMode = false;
-  tripleImageIndices = [0, 1, 2];
-  nextTripleImageSlot = 0;
-
-  isFolderMode = true; // 进入文件夹模式
-  isVideoFolderMode = false; // 默认不是视频文件夹模式
-
+  // Convert FileList to Array and pass to processFolderPaths
   const files = Array.from(event.target.files);
   // 筛选出图片文件和视频文件
   const imageFiles = files.filter(file => file.type.startsWith('image/'));
@@ -129,8 +147,29 @@ document.getElementById("folderPicker").addEventListener("change", function (eve
 
   // 判断文件夹模式
   if (videoFiles.length > 0) {
+    // --- 视频逻辑保持不变 ---
+    // 清空之前的列表和定时器
+    backgroundImages = [];
+    backgroundVideos = [];
+    if (backgroundChangeIntervalId) {
+      clearInterval(backgroundChangeIntervalId);
+      backgroundChangeIntervalId = null;
+    }
+    // 清理当前视频元素
+    if (currentVideoElement) {
+      disposeVideoElement(currentVideoElement);
+      currentVideoElement = null;
+    }
+    
+    // Reset triple image mode specific variables
+    isTripleImageMode = false;
+    tripleImageIndices = [0, 1, 2];
+    nextTripleImageSlot = 0;
+
+    isFolderMode = true; // 进入文件夹模式
+    isVideoFolderMode = true; // 是视频文件夹模式
+
     // 如果存在视频文件，进入视频文件夹模式
-    isVideoFolderMode = true;
     backgroundVideos = videoFiles;
     if (videoFiles.length > 1) {
         isVideoLoop = false; // disable looping if multiple videos are present
@@ -150,37 +189,10 @@ document.getElementById("folderPicker").addEventListener("change", function (eve
 
     // 立即加载第一个视频
     changeBackgroundToNextVideo();
+    // --- 视频逻辑结束 ---
   } else if (imageFiles.length > 0) {
-    // 如果只有图片文件，进入图片文件夹模式
-    backgroundImages = imageFiles;
-
-    if (backgroundImages.length === 0) {
-      console.warn("No image files found in the selected folder.");
-      return;
-    }
-    console.log(`Loaded ${backgroundImages.length} images from folder.`);
-
-    // 初始化图片索引数组并打乱
-    initializeAndShuffleIndices(imageIndices, backgroundImages.length);
-    currentImageIndex = 0;
-
-    // 根据图片数量决定是否启用三图模式
-    isTripleImageMode = backgroundImages.length >= 3;
-    material.uniforms.u_triple_image_mode.value = isTripleImageMode;
-    
-    // 重置三图模式状态
-    if (isTripleImageMode) {
-        // Initial indices for triple mode: first three from shuffled list
-        tripleImageIndices = [imageIndices[0], imageIndices[1], imageIndices[2]];
-        nextTripleImageSlot = 0; // Start by replacing the first slot next
-        currentImageIndex = 3; // Next image to load will be the 4th one
-    }
-    
-    // 立即加载第一组图片
-    changeBackgroundToNextImage();
-
-    // 设置定时器，根据配置的时间间隔更换图片
-    backgroundChangeIntervalId = setInterval(changeBackgroundToNextImage, slideShowInterval * 1000);
+    // 如果只有图片文件，使用新的处理函数
+    processFolderPaths(imageFiles); // Pass the File objects directly
   } else {
     console.warn("No image or video files found in the selected folder.");
     return;
@@ -521,12 +533,92 @@ function initializeAndShuffleIndices(indicesArray, length) {
     [indicesArray[i], indicesArray[j]] = [indicesArray[j], indicesArray[i]];
   }
 }
+
+// --- 新增：处理文件夹路径列表的函数 ---
+async function processFolderPaths(imageUrls) {
+  if (imageUrls.length === 0) return Promise.resolve();
+
+  // Clear previous state
+  backgroundImages = [];
+  backgroundVideos = [];
+  if (backgroundChangeIntervalId) {
+    clearInterval(backgroundChangeIntervalId);
+    backgroundChangeIntervalId = null;
+  }
+  if (currentVideoElement) {
+    disposeVideoElement(currentVideoElement);
+    currentVideoElement = null;
+  }
+
+  // Reset triple image mode specific variables
+  isTripleImageMode = false;
+  tripleImageIndices = [0, 1, 2];
+  nextTripleImageSlot = 0;
+
+  isFolderMode = true; // Enter folder mode
+  isVideoFolderMode = false; // Not video mode
+
+  // Store the URLs directly
+  backgroundImages = imageUrls;
+
+  console.log(`Loaded ${backgroundImages.length} images from list.`);
+
+  // Initialize and shuffle image indices
+  initializeAndShuffleIndices(imageIndices, backgroundImages.length);
+  currentImageIndex = 0;
+
+  // Determine if triple image mode should be enabled
+  isTripleImageMode = backgroundImages.length >= 3;
+  material.uniforms.u_triple_image_mode.value = isTripleImageMode;
+
+  // Reset triple image mode state
+  if (isTripleImageMode) {
+    tripleImageIndices = [imageIndices[0], imageIndices[1], imageIndices[2]];
+    nextTripleImageSlot = 0;
+    currentImageIndex = 3; // Next image to load will be the 4th one
+  }
+
+  // Immediately load the first set of images
+  // Return a promise that resolves when the first image(s) are loaded
+  return new Promise((resolve) => {
+    const loadFirstImages = () => {
+      changeBackgroundToNextImage();
+      // Set up the timer for slideshow
+      backgroundChangeIntervalId = setInterval(changeBackgroundToNextImage, slideShowInterval * 1000);
+      resolve();
+    };
+
+    // If in triple mode, wait for initial load to complete before setting interval
+    // A simple way is to check if it's the first load in triple mode
+    if (isTripleImageMode && nextTripleImageSlot === 0) {
+      // We can use a flag or a more complex promise mechanism
+      // For simplicity, we'll just call it directly, as the initial load logic handles it
+      loadFirstImages();
+    } else {
+      loadFirstImages();
+    }
+  });
+}
 // --- 新增结束 ---
 
-// --- 新增：更换到下一个背景图片的函数 ---
+// --- 修改：更换到下一个背景图片的函数，支持 File 对象和 URL 字符串 ---
 function changeBackgroundToNextImage() {
   if (!isFolderMode || isVideoFolderMode || backgroundImages.length === 0) { // 如果不是文件夹模式、是视频模式或者没有图片，则不执行
     return;
+  }
+
+  // Helper function to get the image source (File object or URL string) and its name
+  function getImageSourceAndName(index) {
+    const item = backgroundImages[index];
+    if (item instanceof File) {
+      return { source: URL.createObjectURL(item), name: item.name, isFile: true };
+    } else if (typeof item === 'string') {
+      // Extract filename from path for logging
+      const parts = item.split('/');
+      const name = parts[parts.length - 1];
+      return { source: item, name: name, isFile: false };
+    }
+    return { source: null, name: 'unknown', isFile: false };
   }
 
   if (isTripleImageMode) {
@@ -543,20 +635,20 @@ function changeBackgroundToNextImage() {
         const index0 = imageIndices[0];
         const index1 = imageIndices[1];
         const index2 = imageIndices[2];
-        const imageFile0 = backgroundImages[index0];
-        const imageFile1 = backgroundImages[index1];
-        const imageFile2 = backgroundImages[index2];
+        const imageInfo0 = getImageSourceAndName(index0);
+        const imageInfo1 = getImageSourceAndName(index1);
+        const imageInfo2 = getImageSourceAndName(index2);
 
         // 创建一个Promise数组来并行加载三张图片
         const texturePromises = [
           new Promise((resolve, reject) => {
-            new THREE.TextureLoader().load(URL.createObjectURL(imageFile0), resolve, undefined, reject);
+            new THREE.TextureLoader().load(imageInfo0.source, resolve, undefined, reject);
           }),
           new Promise((resolve, reject) => {
-            new THREE.TextureLoader().load(URL.createObjectURL(imageFile1), resolve, undefined, reject);
+            new THREE.TextureLoader().load(imageInfo1.source, resolve, undefined, reject);
           }),
           new Promise((resolve, reject) => {
-            new THREE.TextureLoader().load(URL.createObjectURL(imageFile2), resolve, undefined, reject);
+            new THREE.TextureLoader().load(imageInfo2.source, resolve, undefined, reject);
           })
         ];
 
@@ -572,6 +664,10 @@ function changeBackgroundToNextImage() {
               tex0.dispose();
               tex1.dispose();
               tex2.dispose();
+              // Revoke object URLs if they were created
+              if (imageInfo0.isFile) URL.revokeObjectURL(imageInfo0.source);
+              if (imageInfo1.isFile) URL.revokeObjectURL(imageInfo1.source);
+              if (imageInfo2.isFile) URL.revokeObjectURL(imageInfo2.source);
               return;
             }
 
@@ -591,10 +687,19 @@ function changeBackgroundToNextImage() {
             // 确保三图模式开启
             material.uniforms.u_triple_image_mode.value = true;
             
-            console.log(`Triple Mode: Initial load complete. Displaying images ${index0}, ${index1}, ${index2}`);
+            console.log(`Triple Mode: Initial load complete. Displaying images ${imageInfo0.name}, ${imageInfo1.name}, ${imageInfo2.name}`);
+            
+            // Revoke object URLs after successful load and use
+            if (imageInfo0.isFile) URL.revokeObjectURL(imageInfo0.source);
+            if (imageInfo1.isFile) URL.revokeObjectURL(imageInfo1.source);
+            if (imageInfo2.isFile) URL.revokeObjectURL(imageInfo2.source);
           })
           .catch(error => {
             console.error("Error loading initial textures for triple mode:", error);
+            // Revoke object URLs on error
+            if (imageInfo0.isFile) URL.revokeObjectURL(imageInfo0.source);
+            if (imageInfo1.isFile) URL.revokeObjectURL(imageInfo1.source);
+            if (imageInfo2.isFile) URL.revokeObjectURL(imageInfo2.source);
           });
           
         // 更新状态，准备下一次单张替换
@@ -616,39 +721,45 @@ function changeBackgroundToNextImage() {
     
     // 获取下一张要加载的图片索引和文件
     const nextImageIndex = imageIndices[currentImageIndex];
-    const nextImageFile = backgroundImages[nextImageIndex];
-    console.log(`Triple Mode: Loading next image: ${nextImageFile.name} (index: ${nextImageIndex})`);
+    const nextImageInfo = getImageSourceAndName(nextImageIndex);
+    console.log(`Triple Mode: Loading next image: ${nextImageInfo.name} (index: ${nextImageIndex})`);
 
     // 加载下一张图片
-    new THREE.TextureLoader().load(URL.createObjectURL(nextImageFile), function (newTexture) {
+    new THREE.TextureLoader().load(nextImageInfo.source, function (newTexture) {
     
         // 如果正在过渡，则跳过本次切换
         if (fadeTransition && fadeTransition.isTransitioning) {
             console.log("Transition in progress, skipping single image replacement.");
             newTexture.dispose();
+            // Revoke object URL on skip
+            if (nextImageInfo.isFile) URL.revokeObjectURL(nextImageInfo.source);
             return;
         }
         
         // 根据 nextTripleImageSlot 决定替换哪张贴图
         let oldTextureToDispose = null;
+        let oldTextureSlotIndex = -1;
         switch (nextTripleImageSlot) {
             case 0:
                 oldTextureToDispose = material.uniforms.u_tex0.value;
                 material.uniforms.u_tex0.value = newTexture;
                 material.uniforms.u_tex0_resolution.value = new THREE.Vector2(newTexture.image.width, newTexture.image.height);
                 tripleImageIndices[0] = nextImageIndex; // 更新索引记录
+                oldTextureSlotIndex = 0;
                 break;
             case 1:
                 oldTextureToDispose = material.uniforms.u_tex1.value;
                 material.uniforms.u_tex1.value = newTexture;
                 material.uniforms.u_tex1_resolution.value = new THREE.Vector2(newTexture.image.width, newTexture.image.height);
                 tripleImageIndices[1] = nextImageIndex; // 更新索引记录
+                oldTextureSlotIndex = 1;
                 break;
             case 2:
                 oldTextureToDispose = material.uniforms.u_tex2.value;
                 material.uniforms.u_tex2.value = newTexture;
                 material.uniforms.u_tex2_resolution.value = new THREE.Vector2(newTexture.image.width, newTexture.image.height);
                 tripleImageIndices[2] = nextImageIndex; // 更新索引记录
+                oldTextureSlotIndex = 2;
                 break;
         }
         
@@ -657,13 +768,18 @@ function changeBackgroundToNextImage() {
             oldTextureToDispose.dispose();
         }
         
-        console.log(`Triple Mode: Replaced image in slot ${nextTripleImageSlot} with image ${nextImageIndex}. Slots now: [${tripleImageIndices[0]}, ${tripleImageIndices[1]}, ${tripleImageIndices[2]}]`);
+        console.log(`Triple Mode: Replaced image in slot ${nextTripleImageSlot} with image ${nextImageInfo.name}. Slots now: [${tripleImageIndices[0]}, ${tripleImageIndices[1]}, ${tripleImageIndices[2]}]`);
         
         // 更新下一个要替换的槽位 (0 -> 1 -> 2 -> 0 ...)
         nextTripleImageSlot = (nextTripleImageSlot + 1) % 3;
         
+        // Revoke the object URL for the loaded image after it's used
+        if (nextImageInfo.isFile) URL.revokeObjectURL(nextImageInfo.source);
+        
     }, undefined, function(error) {
         console.error("Error loading texture for single replacement in triple mode:", error);
+        // Revoke object URL on error
+        if (nextImageInfo.isFile) URL.revokeObjectURL(nextImageInfo.source);
     });
     
     // 更新 currentImageIndex，准备下下一张图片
@@ -676,18 +792,20 @@ function changeBackgroundToNextImage() {
     }
 
   } else {
-    // 单图模式逻辑（保持原有逻辑）
+    // 单图模式逻辑（保持原有逻辑，但适配 File/URL）
     // 获取下一个图片索引
     const imageIndex = imageIndices[currentImageIndex];
-    const imageFile = backgroundImages[imageIndex];
-    console.log(`Single Mode: Changing background to: ${imageFile.name} (index: ${imageIndex}, position: ${currentImageIndex + 1}/${backgroundImages.length})`);
+    const imageInfo = getImageSourceAndName(imageIndex);
+    console.log(`Single Mode: Changing background to: ${imageInfo.name} (index: ${imageIndex}, position: ${currentImageIndex + 1}/${backgroundImages.length})`);
 
-    // 使用 File 对象创建对象 URL 并加载
-    new THREE.TextureLoader().load(URL.createObjectURL(imageFile), function (tex) {
+    // 加载纹理
+    new THREE.TextureLoader().load(imageInfo.source, function (tex) {
       // 如果正在过渡，则跳过本次切换
       if (fadeTransition && fadeTransition.isTransitioning) {
         console.log("Transition in progress, skipping image change.");
         tex.dispose(); // 清理刚刚加载的纹理
+        // Revoke object URL on skip
+        if (imageInfo.isFile) URL.revokeObjectURL(imageInfo.source);
         return;
       }
 
@@ -703,6 +821,13 @@ function changeBackgroundToNextImage() {
         // 确保三图模式关闭
         material.uniforms.u_triple_image_mode.value = false;
       }
+      
+      // Revoke the object URL for the loaded image after it's used or transition starts
+      if (imageInfo.isFile) URL.revokeObjectURL(imageInfo.source);
+    }, undefined, function(error) {
+        console.error("Error loading texture in single mode:", error);
+        // Revoke object URL on error
+        if (imageInfo.isFile) URL.revokeObjectURL(imageInfo.source);
     });
 
     // 更新索引，如果已遍历完所有图片，则重新打乱索引数组
@@ -714,7 +839,7 @@ function changeBackgroundToNextImage() {
     }
   }
 }
-// --- 新增结束 ---
+// --- 修改结束 ---
 
 // --- 新增：播放下一个背景视频的函数 ---
 function changeBackgroundToNextVideo() {
