@@ -7,24 +7,19 @@ let isPaused = false,
 let devicePixelRatio = window.devicePixelRatio || 1;
 // --- 新增变量 ---
 let backgroundImages = []; // 存储从文件夹读取的图片文件对象
-let backgroundVideos = []; // 存储从文件夹读取的视频文件对象
 let isFolderMode = false; // 标记是否处于文件夹模式
 let isVideoLoop = true;
 let currentVideoElement = null; // 当前播放的视频元素
 // 用于不重复随机遍历的索引数组
 let imageIndices = []; // 图片文件的索引数组
-let videoIndices = []; // 视频文件的索引数组
 let currentImageIndex = 0; // 当前图片索引位置 (用于单图模式或三图模式首次加载)
-let currentVideoIndex = 0; // 当前视频索引位置
 
 // 三图模式特有变量
 let isTripleImageMode = false; // 标记是否处于三图模式 (基于图片数量)
 let tripleImageIndices = [0, 1, 2]; // 当前在屏幕上显示的三张图片的索引 (相对于imageIndices)
-let nextTripleImageSlot = 0; // 下一个要替换的图片槽位 (0, 1, 2)
 
 // --- 新增：用于独立定时器管理 ---
 let imageChangeTimers = {}; // 存储每个图片槽位的定时器ID {0: id, 1: id, 2: id}
-let videoChangeTimer = null;   // 存储视频切换的定时器ID
 // --- 新增结束 ---
 
 let scene, camera, renderer, material;
@@ -161,7 +156,6 @@ document.getElementById("folderPicker").addEventListener("change", function (eve
   if (imageFiles.length > 0 || videoFiles.length > 0) {
     // 清空之前的列表和定时器
     backgroundImages = [];
-    backgroundVideos = [];
     // 清理当前视频元素
     if (currentVideoElement) {
       disposeVideoElement(currentVideoElement);
@@ -171,7 +165,6 @@ document.getElementById("folderPicker").addEventListener("change", function (eve
     // Reset triple image mode specific variables
     isTripleImageMode = false;
     tripleImageIndices = [0, 1, 2];
-    nextTripleImageSlot = 0;
 
     isFolderMode = true; // 进入文件夹模式
 
@@ -309,11 +302,6 @@ function livelyPropertyListener(name, val) {
         // 清除所有图片定时器
         Object.values(imageChangeTimers).forEach(id => clearTimeout(id));
         imageChangeTimers = {};
-        // 清除视频定时器
-        // if (videoChangeTimer) { // Assuming videoChangeTimer is not used anymore
-        //     clearTimeout(videoChangeTimer);
-        //     videoChangeTimer = null;
-        // }
         // 立即切换到下一张图片/视频 或 重新设置独立定时器
         if (isTripleImageMode) {
             // 重新设置独立定时器
@@ -423,11 +411,6 @@ function datUI() {
         // 清除所有图片定时器
         Object.values(imageChangeTimers).forEach(id => clearTimeout(id));
         imageChangeTimers = {};
-        // 清除视频定时器
-        // if (videoChangeTimer) { // Assuming videoChangeTimer is not used anymore
-        //     clearTimeout(videoChangeTimer);
-        //     videoChangeTimer = null;
-        // }
         // 立即切换到下一张图片/视频 或 重新设置独立定时器
         if (isTripleImageMode) {
             // 重新设置独立定时器
@@ -569,15 +552,9 @@ async function processFolderPaths(mediaUrls) {
 
   // Clear previous state
   backgroundImages = [];
-  backgroundVideos = [];
   // 清除所有图片定时器
   Object.values(imageChangeTimers).forEach(id => clearTimeout(id));
   imageChangeTimers = {};
-  // 清除视频定时器
-  if (videoChangeTimer) {
-    clearTimeout(videoChangeTimer);
-    videoChangeTimer = null;
-  }
   if (currentVideoElement) {
     disposeVideoElement(currentVideoElement);
     currentVideoElement = null;
@@ -586,7 +563,6 @@ async function processFolderPaths(mediaUrls) {
   // Reset triple image mode specific variables
   isTripleImageMode = false;
   tripleImageIndices = [0, 1, 2];
-  nextTripleImageSlot = 0;
 
   isFolderMode = true; // Enter folder mode
 
@@ -606,7 +582,6 @@ async function processFolderPaths(mediaUrls) {
   // Reset triple image mode state
   if (isTripleImageMode) {
     tripleImageIndices = [imageIndices[0], imageIndices[1], imageIndices[2]];
-    nextTripleImageSlot = 0;
     currentImageIndex = 3; // Next image to load will be the 4th one
   }
 
@@ -624,7 +599,7 @@ async function processFolderPaths(mediaUrls) {
 
     // If in triple mode, wait for initial load to complete before setting interval
     // A simple way is to check if it's the first load in triple mode
-    if (isTripleImageMode && nextTripleImageSlot === 0) {
+    if (isTripleImageMode) {
       // We can use a flag or a more complex promise mechanism
       // For simplicity, we'll just call it directly, as the initial load logic handles it
       loadFirstImages();

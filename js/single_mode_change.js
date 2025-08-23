@@ -195,18 +195,12 @@ function changeBackgroundToNextImage() {
   
   // --- 新增：为下一次图片切换设置定时器 ---
   function scheduleNextImageChange() {
-    // 清除之前的定时器
-    if (backgroundChangeIntervalId) {
-      clearTimeout(backgroundChangeIntervalId);
-      backgroundChangeIntervalId = null;
-    }
-    
     // 计算随机间隔时间 (slideShowInterval 到 slideShowInterval * 2 之间)
     const randomInterval = (slideShowInterval + Math.random() * slideShowInterval) * 1000;
     console.log(`Scheduling next image change in ${randomInterval / 1000} seconds.`);
     
     // 设置新的定时器
-    backgroundChangeIntervalId = setTimeout(() => {
+    setTimeout(() => {
         changeBackgroundToNextImage();
     }, randomInterval);
   }
