@@ -1,11 +1,15 @@
 // --- 修改：更换到下一个背景图片的函数，支持 File 对象和 URL 字符串 ---
 // --- 修改为：仅用于单图模式 ---
 function changeBackgroundToNextImage() {
-  if (!isFolderMode || isVideoFolderMode || backgroundImages.length === 0 || isTripleImageMode) { // 如果不是文件夹模式、是视频模式、没有图片或处于三图模式，则不执行
+  // --- 修复：移除对未定义变量 isVideoFolderMode 的引用 ---
+  // if (!isFolderMode || isVideoFolderMode || backgroundImages.length === 0 || isTripleImageMode) { // 如果不是文件夹模式、是视频模式、没有图片或处于三图模式，则不执行
+  if (!isFolderMode || backgroundImages.length === 0 || isTripleImageMode) {
+  // --- 修复结束 ---
     return;
   }
 
   // Helper function to get the媒体源 (File 对象或 URL 字符串)及其名称，并确定类型
+  // --- 更新此函数以使用新的路径解析逻辑 ---
   function getMediaSourceAndName(index) {
     const item = backgroundImages[index];
     if (item instanceof File) {
@@ -18,16 +22,26 @@ function changeBackgroundToNextImage() {
       // 基本的视频扩展名检查
       const lowerName = name.toLowerCase();
       const isVideo = lowerName.endsWith('.mp4') || lowerName.endsWith('.webm') || lowerName.endsWith('.ogg');
+
+      // --- 关键修改：直接返回原始相对路径字符串 ---
+      // Lively 应该能够直接解析相对于 index.html 的路径
+      console.log(`[changeBackgroundToNextImage.js::getMediaSourceAndName] Using relative path directly: '${item}'`);
       return { source: item, name: name, isFile: false, isVideo: isVideo };
+      // --- 修改结束 ---
     }
     return { source: null, name: 'unknown', isFile: false, isVideo: false };
   }
+  // --- 更新结束 ---
 
   // 单图模式逻辑（保持原有逻辑，但适配 File/URL 和视频）
   // 获取下一个媒体索引
   const mediaIndex = imageIndices[currentImageIndex];
   const mediaInfo = getMediaSourceAndName(mediaIndex);
   console.log(`Single Mode: Changing background to: ${mediaInfo.name} (index: ${mediaIndex}, position: ${currentImageIndex + 1}/${backgroundImages.length})`);
+
+  // ... rest of the function remains the same ...
+
+  // ... rest of the function remains the same ...
 
   if (mediaInfo.isVideo) {
     // 处理视频

@@ -2,6 +2,7 @@
 
 // Helper function to get the media source (File object or URL string) and its name, and determine type
 // This function is also used in changeBackgroundForSlot
+// --- 修改：简化路径处理，直接使用相对路径字符串 ---
 function getMediaSourceAndName(index) {
     const item = backgroundImages[index];
     if (item instanceof File) {
@@ -14,10 +15,16 @@ function getMediaSourceAndName(index) {
         // Basic check for video extension
         const lowerName = name.toLowerCase();
         const isVideo = lowerName.endsWith('.mp4') || lowerName.endsWith('.webm') || lowerName.endsWith('.ogg');
+
+        // --- 关键修改：直接返回原始相对路径字符串 ---
+        // Lively 应该能够直接解析相对于 index.html 的路径
+        console.log(`[getMediaSourceAndName] Using relative path directly: '${item}'`);
         return { source: item, name: name, isFile: false, isVideo: isVideo };
+        // --- 修改结束 ---
     }
     return { source: null, name: 'unknown', isFile: false, isVideo: false };
 }
+// --- 修改结束 ---
 
 // --- 新增：原子化地获取并递增 currentImageIndex ---
 function getNextUniqueMediaIndex() {

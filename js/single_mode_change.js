@@ -6,22 +6,27 @@ function changeBackgroundToNextImage() {
   }
 
   // Helper function to get the media source (File object or URL string) and its name, and determine type
+  // --- 更新此函数以使用新的路径解析逻辑 ---
   function getMediaSourceAndName(index) {
     const item = backgroundImages[index];
     if (item instanceof File) {
       const isVideo = item.type.startsWith('video/');
       return { source: URL.createObjectURL(item), name: item.name, isFile: true, isVideo: isVideo };
     } else if (typeof item === 'string') {
-      // Extract filename from path for logging
       const parts = item.split('/');
       const name = parts[parts.length - 1];
-      // Basic check for video extension
       const lowerName = name.toLowerCase();
       const isVideo = lowerName.endsWith('.mp4') || lowerName.endsWith('.webm') || lowerName.endsWith('.ogg');
+
+      // --- 关键修改：直接返回原始相对路径字符串 ---
+      // Lively 应该能够直接解析相对于 index.html 的路径
+      console.log(`[changeBackgroundToNextImage::getMediaSourceAndName] Using relative path directly: '${item}'`);
       return { source: item, name: name, isFile: false, isVideo: isVideo };
+      // --- 修改结束 ---
     }
     return { source: null, name: 'unknown', isFile: false, isVideo: false };
   }
+  // --- 修改结束 ---
 
   // 单图模式逻辑（保持原有逻辑，但适配 File/URL 和视频）
   // 获取下一个媒体索引

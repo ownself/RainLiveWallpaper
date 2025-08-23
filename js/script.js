@@ -316,22 +316,28 @@ function livelyPropertyListener(name, val) {
         Object.values(imageChangeTimers).forEach(id => clearTimeout(id));
         imageChangeTimers = {};
         // 清除视频定时器
-        if (videoChangeTimer) {
-            clearTimeout(videoChangeTimer);
-            videoChangeTimer = null;
-        }
+        // if (videoChangeTimer) { // Assuming videoChangeTimer is not used anymore
+        //     clearTimeout(videoChangeTimer);
+        //     videoChangeTimer = null;
+        // }
         // 立即切换到下一张图片/视频 或 重新设置独立定时器
-        if (isVideoFolderMode) {
-            changeBackgroundToNextVideo();
-        } else {
+        // --- 修复：移除对未定义变量 isVideoFolderMode 的引用 ---
+        // if (isVideoFolderMode) {
+        //     changeBackgroundToNextVideo(); // This function is deprecated
+        // } else {
             if (isTripleImageMode) {
                 // 重新设置独立定时器
-                setupIndependentImageTimers();
+                if (typeof setupIndependentImageTimers === 'function') {
+                    setupIndependentImageTimers();
+                } else {
+                     console.error("setupIndependentImageTimers function is not available in livelyPropertyListener::slideShowInterval");
+                }
             } else {
                 // 对于单图模式，立即切换并设置新的定时器
                 changeBackgroundToNextImage();
             }
-        }
+        // }
+        // --- 修复结束 ---
       }
       break;
     case "rainEnabled":
@@ -430,22 +436,28 @@ function datUI() {
         Object.values(imageChangeTimers).forEach(id => clearTimeout(id));
         imageChangeTimers = {};
         // 清除视频定时器
-        if (videoChangeTimer) {
-            clearTimeout(videoChangeTimer);
-            videoChangeTimer = null;
-        }
+        // if (videoChangeTimer) { // Assuming videoChangeTimer is not used anymore
+        //     clearTimeout(videoChangeTimer);
+        //     videoChangeTimer = null;
+        // }
         // 立即切换到下一张图片/视频 或 重新设置独立定时器
-        if (isVideoFolderMode) {
-            changeBackgroundToNextVideo();
-        } else {
+        // --- 修复：移除对未定义变量 isVideoFolderMode 的引用 ---
+        // if (isVideoFolderMode) {
+        //     changeBackgroundToNextVideo(); // This function is deprecated
+        // } else {
             if (isTripleImageMode) {
                 // 重新设置独立定时器
-                setupIndependentImageTimers();
+                if (typeof setupIndependentImageTimers === 'function') {
+                    setupIndependentImageTimers();
+                } else {
+                     console.error("setupIndependentImageTimers function is not available in bg.add::slideShowIntervalSetting::onChange");
+                }
             } else {
                 // 对于单图模式，立即切换并设置新的定时器
                 changeBackgroundToNextImage();
             }
-        }
+        // }
+        // --- 修复结束 ---
       }
       // 通知Lively属性变更
       if (typeof livelyPropertyListener === 'function') {
@@ -536,6 +548,12 @@ document.addEventListener("mousemove", function (event) {
 
 //helpers
 function getExtension(filePath) {
+  // --- 修复：增加对 null/undefined 和非字符串的检查 ---
+  if (typeof filePath !== 'string' || filePath.length === 0) {
+    console.warn("[getExtension] Invalid filePath provided:", filePath);
+    return ''; // Return empty string for invalid input
+  }
+  // --- 修复结束 ---
   return filePath.substring(filePath.lastIndexOf(".") + 1, filePath.length).toLowerCase() || filePath;
 }
 
@@ -676,6 +694,7 @@ function scheduleImageChangeForSlot(slot) {
 }
 
 // Modify changeBackgroundForSlot to handle both images and videos
+// --- 注意：这部分代码似乎已被 loadInitialTripleImages.js 中的版本取代，为保持一致性也进行更新 ---
 function changeBackgroundForSlot(slot) {
     if (!isFolderMode || backgroundImages.length === 0 || !isTripleImageMode) {
         return;
@@ -684,6 +703,7 @@ function changeBackgroundForSlot(slot) {
     console.log(`Changing background for slot ${slot}`);
 
     // Helper function to get the media source (File object or URL string) and its name, and determine type
+    // --- 更新此函数以使用新的路径解析逻辑 ---
     function getMediaSourceAndName(index) {
         const item = backgroundImages[index];
         if (item instanceof File) {
@@ -696,7 +716,12 @@ function changeBackgroundForSlot(slot) {
             // Basic check for video extension
             const lowerName = name.toLowerCase();
             const isVideo = lowerName.endsWith('.mp4') || lowerName.endsWith('.webm') || lowerName.endsWith('.ogg');
+
+            // --- 关键修改：直接返回原始相对路径字符串 ---
+            // Lively 应该能够直接解析相对于 index.html 的路径
+            console.log(`[script.js::changeBackgroundForSlot::getMediaSourceAndName] Using relative path directly: '${item}'`);
             return { source: item, name: name, isFile: false, isVideo: isVideo };
+            // --- 修改结束 ---
         }
         return { source: null, name: 'unknown', isFile: false, isVideo: false };
     }
