@@ -24,7 +24,7 @@ let imageChangeTimers = {}; // 存储每个图片槽位的定时器ID {0: id, 1:
 
 let scene, camera, renderer, material;
 let settings = { fps: 30, scale: 1.0, parallaxVal: 0 };
-let slideShowInterval = 4; // 幻灯片间隔时间（秒）
+let slideShowInterval = 60; // 幻灯片间隔时间（秒）
 let videoElement;
 
 

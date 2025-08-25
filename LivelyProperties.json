@@ -51,7 +51,7 @@
     "min": 5,
     "text": "Slide Show Interval (seconds)",
     "type": "slider",
-    "value": 10
+    "value": 60
   },
   "mediaScaling": {
     "type": "dropdown",
